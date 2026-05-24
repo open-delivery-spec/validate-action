@@ -70,7 +70,7 @@ runs:
 
     - name: Install ODS CLI
       shell: bash
-      run: go install github.com/open-delivery-spec/cli/cmd/ods@v${{ inputs.spec_version }}
+      run: go install github.com/open-delivery-spec/cli/cmd/ods@latest
 
     - name: Run ODS Check
       id: ods
