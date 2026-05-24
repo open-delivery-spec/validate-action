@@ -126,6 +126,8 @@ jobs:
 | `commit_message` | For `commit-message` | — | Commit message to validate |
 | `pr_body` | For `pr-description` | — | PR description body |
 | `pr_number` | For `ai-review`, `approval-workflow` | — | PR number |
+| `rollback_plan` | For `rollback-plan` | — | Path to rollback plan JSON file |
+| `evidence_bundle` | For `prod-evidence` | — | Path to evidence bundle JSON file |
 | `release_version` | For `release-readiness` | — | Release version |
 | `strict` | No | `false` | Fail on warnings too |
 

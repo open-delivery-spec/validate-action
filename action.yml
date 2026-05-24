@@ -38,6 +38,10 @@ inputs:
     description: 'Path to rollback plan JSON file'
     required: false
 
+  evidence_bundle:
+    description: 'Path to evidence bundle JSON file (for prod-evidence check)'
+    required: false
+
   strict:
     description: 'Fail on warnings as well as errors'
     required: false
@@ -59,14 +63,14 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Setup ODS CLI
-      uses: actions/setup-node@v4
+    - name: Setup Go
+      uses: actions/setup-go@v5
       with:
-        node-version: '20'
+        go-version: '1.22'
 
-    - name: Install ODS validator
+    - name: Install ODS CLI
       shell: bash
-      run: npm install -g @open-delivery-spec/validator@${{ inputs.spec_version }}
+      run: go install github.com/open-delivery-spec/cli/cmd/ods@v${{ inputs.spec_version }}
 
     - name: Run ODS Check
       id: ods
@@ -79,6 +83,7 @@ runs:
         PR_NUMBER: ${{ inputs.pr_number }}
         RELEASE_VERSION: ${{ inputs.release_version }}
         ROLLBACK_PLAN: ${{ inputs.rollback_plan }}
+        EVIDENCE_BUNDLE: ${{ inputs.evidence_bundle }}
         STRICT: ${{ inputs.strict }}
       run: |
         case "$CHECK" in
