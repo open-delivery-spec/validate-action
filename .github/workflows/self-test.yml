@@ -19,7 +19,7 @@ jobs:
           go-version: "1.22"
 
       - name: Install ODS CLI
-        run: go install github.com/open-delivery-spec/cli/cmd/ods@latest
+        run: go install github.com/open-delivery-spec/cli/cmd/ods@main
 
       - name: Branch naming (happy)
         uses: ./

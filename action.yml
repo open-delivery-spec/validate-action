@@ -66,7 +66,7 @@ runs:
 
     - name: Install ODS CLI
       shell: bash
-      run: go install github.com/open-delivery-spec/cli/cmd/ods@latest
+      run: go install github.com/open-delivery-spec/cli/cmd/ods@main
 
     - name: Run ODS Check
       id: ods
