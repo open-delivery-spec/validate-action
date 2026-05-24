@@ -1,5 +1,7 @@
 # ODS GitHub Action
 
+[![CI](https://github.com/open-delivery-spec/github-action/actions/workflows/self-test.yml/badge.svg)](https://github.com/open-delivery-spec/github-action/actions/workflows/self-test.yml)
+
 GitHub Action to validate delivery artifacts against [Open Delivery Spec](https://github.com/open-delivery-spec/spec) standards.
 
 ## Usage
