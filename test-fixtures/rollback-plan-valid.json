@@ -1,0 +1,22 @@
+{
+  "release_id": "v1.2.0",
+  "rollback_strategy": "feature_flag",
+  "tested": true,
+  "steps": [
+    {"step": 1, "action": "disable_feature_flag", "description": "Turn off the OAuth feature flag", "verification": "Check /health returns 200 and OAuth endpoint returns 404"}
+  ],
+  "rollback_indicators": {
+    "error_rate_threshold": "> 1% for 5 minutes",
+    "monitoring_dashboard": "https://grafana.example.com/d/release-health",
+    "alert_channel": "#team-platform-alerts"
+  },
+  "data_rollback": {
+    "database_migrations": false,
+    "migration_reversible": true,
+    "data_loss_risk": "none",
+    "backup_taken": true
+  },
+  "communication_plan": {
+    "notification_template": "Rolling back v1.2.0 due to elevated error rates. ETA: 5 minutes."
+  }
+}

@@ -1,0 +1,112 @@
+name: Self-Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  # ── Dogfood: use this action to validate itself ─────────────
+  self-test:
+    name: Eat Our Own Dogfood
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Install ODS CLI
+        run: go install github.com/open-delivery-spec/cli/cmd/ods@latest
+
+      # Use the local action to validate a branch name
+      - name: Branch naming (happy)
+        uses: ./
+        with:
+          check: branch-naming
+          branch_name: "feature/add-ci-dogfood"
+
+      - name: Branch naming (invalid)
+        continue-on-error: true
+        id: bad-branch
+        uses: ./
+        with:
+          check: branch-naming
+          branch_name: "BadBranch"
+
+      - name: Verify invalid branch was caught
+        if: steps.bad-branch.outcome != 'failure'
+        run: |
+          echo "Expected branch-naming to fail for 'BadBranch' but it passed!"
+          exit 1
+
+      - name: Commit message (happy)
+        uses: ./
+        with:
+          check: commit-message
+          commit_message: |
+            feat(ci): add self-test workflow
+
+            AI-assisted: true
+            AI-tool: GitHub Copilot
+
+      - name: PR description (happy)
+        uses: ./
+        with:
+          check: pr-description
+          pr_body: |
+            ## Summary
+            Add self-test workflow for the GitHub Action
+
+            ## Type
+            - [x] Feature
+
+            ## AI Disclosure
+            This PR contains AI-generated code
+            AI Tool: GitHub Copilot
+
+            ## Changes
+            - Added .github/workflows/self-test.yml
+
+            ## Testing
+            - [x] Manual testing performed
+
+            ## Checklist
+            - [x] Branch naming follows ODS
+
+      - name: Rollback plan (happy)
+        uses: ./
+        with:
+          check: rollback-plan
+          rollback_plan: "./test-fixtures/rollback-plan-valid.json"
+
+      - name: Evidence bundle (happy)
+        uses: ./
+        with:
+          check: prod-evidence
+          evidence_bundle: "./test-fixtures/evidence-valid.json"
+
+  # ── Validate action.yml syntax ───────────────────────────────
+  lint-action:
+    name: Lint action.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check YAML syntax
+        run: python3 -c "import yaml; yaml.safe_load(open('action.yml')); print('✅ action.yml is valid YAML')"
+
+      - name: Check required fields in action.yml
+        run: |
+          python3 -c "
+      import yaml
+      a = yaml.safe_load(open('action.yml'))
+      assert a['name'], 'name is required'
+      assert a['description'], 'description is required'
+      assert a['runs']['using'] == 'composite', 'must be composite action'
+      assert 'inputs' in a, 'inputs is required'
+      assert 'check' in a['inputs'], 'check input is required'
+      print('✅ action.yml structure is valid')
+      "
