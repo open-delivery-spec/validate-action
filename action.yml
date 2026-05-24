@@ -100,7 +100,7 @@ runs:
             ods review validate --pr "$PR_NUMBER"
             ;;
           ci-failure)
-            ods ci parse --stdin
+            echo "" | ods ci parse
             ;;
           release-readiness)
             ods release check --version "$RELEASE_VERSION"
@@ -112,10 +112,15 @@ runs:
             ods validate rollback --file "$ROLLBACK_PLAN"
             ;;
           prod-evidence)
-            ods evidence verify --bundle "$EVIDENCE_BUNDLE"
+            ods evidence verify "$EVIDENCE_BUNDLE"
             ;;
           all)
-            ods validate all --pr "$PR_NUMBER" --release "$RELEASE_VERSION" --strict="$STRICT"
+            if [ -n "$BRANCH_NAME" ]; then ods validate branch "$BRANCH_NAME"; fi
+            if [ -n "$COMMIT_MESSAGE" ]; then echo "$COMMIT_MESSAGE" | ods validate commit --stdin; fi
+            if [ -n "$PR_BODY" ]; then echo "$PR_BODY" | ods validate pr --stdin; fi
+            if [ -n "$ROLLBACK_PLAN" ]; then ods validate rollback --file "$ROLLBACK_PLAN"; fi
+            if [ -n "$EVIDENCE_BUNDLE" ]; then ods evidence verify "$EVIDENCE_BUNDLE"; fi
+            if [ -n "$RELEASE_VERSION" ]; then ods release check --version "$RELEASE_VERSION"; fi
             ;;
           *)
             echo "Unknown check: $CHECK"
