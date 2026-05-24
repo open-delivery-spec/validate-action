@@ -21,7 +21,6 @@ jobs:
       - name: Install ODS CLI
         run: go install github.com/open-delivery-spec/cli/cmd/ods@latest
 
-      # Use the local action to validate a branch name
       - name: Branch naming (happy)
         uses: ./
         with:
@@ -29,8 +28,8 @@ jobs:
           branch_name: "feature/add-ci-dogfood"
 
       - name: Branch naming (invalid)
-        continue-on-error: true
         id: bad-branch
+        continue-on-error: true
         uses: ./
         with:
           check: branch-naming
@@ -96,17 +95,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check YAML syntax
-        run: python3 -c "import yaml; yaml.safe_load(open('action.yml')); print('✅ action.yml is valid YAML')"
+        run: python3 -c "import yaml; yaml.safe_load(open('action.yml')); print('action.yml is valid YAML')"
 
       - name: Check required fields in action.yml
-        run: |
-          python3 -c "
-      import yaml
-      a = yaml.safe_load(open('action.yml'))
-      assert a['name'], 'name is required'
-      assert a['description'], 'description is required'
-      assert a['runs']['using'] == 'composite', 'must be composite action'
-      assert 'inputs' in a, 'inputs is required'
-      assert 'check' in a['inputs'], 'check input is required'
-      print('✅ action.yml structure is valid')
-      "
+        run: >
+          python3 -c "import yaml; a = yaml.safe_load(open('action.yml'));
+          assert a['name'], 'name is required';
+          assert a['description'], 'description is required';
+          assert a['runs']['using'] == 'composite', 'must be composite action';
+          assert 'inputs' in a, 'inputs is required';
+          assert 'check' in a['inputs'], 'check input is required';
+          print('action.yml structure is valid')"
