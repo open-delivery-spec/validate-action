@@ -1,0 +1,119 @@
+name: Open Delivery Spec
+description: Validate delivery artifacts against Open Delivery Spec standards
+author: Open Delivery Spec Contributors
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  check:
+    description: 'Type of check to run'
+    required: true
+    default: 'all'
+    # branch-naming | commit-message | pr-description | ai-review |
+    # ci-failure | release-readiness | approval-workflow |
+    # rollback-plan | prod-evidence | all
+
+  branch_name:
+    description: 'Branch name to validate (for branch-naming check)'
+    required: false
+
+  commit_message:
+    description: 'Commit message to validate (for commit-message check)'
+    required: false
+
+  pr_body:
+    description: 'PR description body (for pr-description check)'
+    required: false
+
+  pr_number:
+    description: 'PR number for AI review checks'
+    required: false
+
+  release_version:
+    description: 'Version for release readiness check'
+    required: false
+
+  rollback_plan:
+    description: 'Path to rollback plan JSON file'
+    required: false
+
+  strict:
+    description: 'Fail on warnings as well as errors'
+    required: false
+    default: 'false'
+
+  spec_version:
+    description: 'ODS spec version to validate against'
+    required: false
+    default: '1.0.0'
+
+outputs:
+  result:
+    description: 'conformant | conformant-with-warnings | non-conformant'
+  score:
+    description: 'Readiness score (for release-readiness check)'
+  details:
+    description: 'JSON details of validation results'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup ODS CLI
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install ODS validator
+      shell: bash
+      run: npm install -g @open-delivery-spec/validator@${{ inputs.spec_version }}
+
+    - name: Run ODS Check
+      id: ods
+      shell: bash
+      env:
+        CHECK: ${{ inputs.check }}
+        BRANCH_NAME: ${{ inputs.branch_name }}
+        COMMIT_MESSAGE: ${{ inputs.commit_message }}
+        PR_BODY: ${{ inputs.pr_body }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+        RELEASE_VERSION: ${{ inputs.release_version }}
+        ROLLBACK_PLAN: ${{ inputs.rollback_plan }}
+        STRICT: ${{ inputs.strict }}
+      run: |
+        case "$CHECK" in
+          branch-naming)
+            ods validate branch "$BRANCH_NAME"
+            ;;
+          commit-message)
+            echo "$COMMIT_MESSAGE" | ods validate commit --stdin
+            ;;
+          pr-description)
+            echo "$PR_BODY" | ods validate pr --stdin
+            ;;
+          ai-review)
+            ods review validate --pr "$PR_NUMBER"
+            ;;
+          ci-failure)
+            ods ci parse --stdin
+            ;;
+          release-readiness)
+            ods release check --version "$RELEASE_VERSION"
+            ;;
+          approval-workflow)
+            ods approval check --pr "$PR_NUMBER"
+            ;;
+          rollback-plan)
+            ods validate rollback --file "$ROLLBACK_PLAN"
+            ;;
+          prod-evidence)
+            ods evidence verify --bundle "$EVIDENCE_BUNDLE"
+            ;;
+          all)
+            ods validate all --pr "$PR_NUMBER" --release "$RELEASE_VERSION" --strict="$STRICT"
+            ;;
+          *)
+            echo "Unknown check: $CHECK"
+            exit 1
+            ;;
+        esac
