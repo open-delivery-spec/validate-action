@@ -75,6 +75,12 @@ jobs:
             ## Checklist
             - [x] Branch naming follows ODS
 
+      - name: AI review (happy)
+        uses: ./
+        with:
+          check: ai-review
+          review_record: "./test-fixtures/ai-review-valid.json"
+
       - name: Rollback plan (happy)
         uses: ./
         with:

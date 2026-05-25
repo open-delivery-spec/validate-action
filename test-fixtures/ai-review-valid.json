@@ -1,0 +1,17 @@
+{
+  "pr_number": 42,
+  "review_level": "L2",
+  "ai_contribution_percentage": 65,
+  "reviewer": "jane-doe",
+  "timestamp": "2026-05-24T10:00:00Z",
+  "outcome": "approved",
+  "checklist_results": {
+    "correctness": {"passed": true, "issues": 0},
+    "security": {"passed": true, "issues": 0},
+    "ai_specific": {"passed": true, "issues": 1},
+    "quality": {"passed": true, "issues": 0}
+  },
+  "issues_found": [
+    {"category": "ai_specific", "severity": "low", "description": "Hallucinated API parameter in search.go", "file": "search.go"}
+  ]
+}
