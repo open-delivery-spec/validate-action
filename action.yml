@@ -10,9 +10,7 @@ inputs:
     description: 'Type of check to run'
     required: true
     default: 'all'
-    # branch-naming | commit-message | pr-description | ai-review |
-    # ci-failure | release-readiness | approval-workflow |
-    # rollback-plan | prod-evidence | all
+    # M1 production checks: branch-naming | commit-message | pr-description | all
 
   branch_name:
     description: 'Branch name to validate (for branch-naming check)'
@@ -27,23 +25,23 @@ inputs:
     required: false
 
   pr_number:
-    description: 'PR number for AI review and approval checks'
+    description: 'Reserved for future AI review and approval checks'
     required: false
 
   review_record:
-    description: 'Path to AI review record JSON file (for ai-review and all checks)'
+    description: 'Reserved for future AI review checks'
     required: false
 
   release_version:
-    description: 'Version for release readiness check'
+    description: 'Reserved for future release readiness checks'
     required: false
 
   rollback_plan:
-    description: 'Path to rollback plan JSON file'
+    description: 'Reserved for future rollback plan checks'
     required: false
 
   evidence_bundle:
-    description: 'Path to evidence bundle JSON file (for prod-evidence check)'
+    description: 'Reserved for future evidence bundle checks'
     required: false
 
   strict:
@@ -64,7 +62,7 @@ runs:
   using: composite
   steps:
     - name: Setup Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v5
       with:
         go-version: '1.22'
 
@@ -87,92 +85,119 @@ runs:
         REVIEW_RECORD: ${{ inputs.review_record }}
         STRICT: ${{ inputs.strict }}
       run: |
-        # Capture ODS output and write action outputs
-        capture_result() {
+        set -u
+
+        STRICT_FLAG=""
+        if [ "$STRICT" = "true" ]; then
+          STRICT_FLAG="--strict"
+        fi
+
+        RESULT="conformant"
+        RAN_CHECK=0
+
+        set_result_from_output() {
           local output="$1"
-          if echo "$output" | grep -q "conformant — all requirements"; then
-            echo "result=conformant" >> "$GITHUB_OUTPUT"
-          elif echo "$output" | grep -q "conformant with warnings"; then
-            echo "result=conformant-with-warnings" >> "$GITHUB_OUTPUT"
-          elif echo "$output" | grep -q "non-conformant"; then
-            echo "result=non-conformant" >> "$GITHUB_OUTPUT"
+          if echo "$output" | grep -q "non-conformant"; then
+            RESULT="non-conformant"
+          elif echo "$output" | grep -q "conformant with warnings" && [ "$RESULT" = "conformant" ]; then
+            RESULT="conformant-with-warnings"
           fi
-          echo "$output"
+        }
+
+        run_branch_check() {
+          if [ -z "$BRANCH_NAME" ]; then
+            echo "branch-naming requires branch_name"
+            RESULT="non-conformant"
+            return 2
+          fi
+          echo "Running ODS branch-naming check"
+          OUT=$(ods validate branch "$BRANCH_NAME" $STRICT_FLAG 2>&1)
+          STATUS=$?
+          echo "$OUT"
+          set_result_from_output "$OUT"
+          return $STATUS
+        }
+
+        run_commit_check() {
+          if [ -z "$COMMIT_MESSAGE" ]; then
+            echo "commit-message requires commit_message"
+            RESULT="non-conformant"
+            return 2
+          fi
+          echo "Running ODS commit-message check"
+          OUT=$(printf "%s" "$COMMIT_MESSAGE" | ods validate commit --stdin $STRICT_FLAG 2>&1)
+          STATUS=$?
+          echo "$OUT"
+          set_result_from_output "$OUT"
+          return $STATUS
+        }
+
+        run_pr_check() {
+          if [ -z "$PR_BODY" ]; then
+            echo "pr-description requires pr_body"
+            RESULT="non-conformant"
+            return 2
+          fi
+          echo "Running ODS pr-description check"
+          OUT=$(printf "%s" "$PR_BODY" | ods validate pr --stdin $STRICT_FLAG 2>&1)
+          STATUS=$?
+          echo "$OUT"
+          set_result_from_output "$OUT"
+          return $STATUS
+        }
+
+        finish() {
+          echo "result=$RESULT" >> "$GITHUB_OUTPUT"
         }
 
         case "$CHECK" in
           branch-naming)
-            OUT=$(ods validate branch "$BRANCH_NAME" 2>&1) || { capture_result "$OUT"; exit 1; }
-            capture_result "$OUT"
+            run_branch_check || { finish; exit 1; }
             ;;
           commit-message)
-            OUT=$(echo "$COMMIT_MESSAGE" | ods validate commit --stdin 2>&1) || { capture_result "$OUT"; exit 1; }
-            capture_result "$OUT"
+            run_commit_check || { finish; exit 1; }
             ;;
           pr-description)
-            OUT=$(echo "$PR_BODY" | ods validate pr --stdin 2>&1) || { capture_result "$OUT"; exit 1; }
-            capture_result "$OUT"
-            ;;
-          ai-review)
-            if [ -n "$REVIEW_RECORD" ]; then
-              OUT=$(ods review validate --file "$REVIEW_RECORD" 2>&1) || { capture_result "$OUT"; exit 1; }
-            else
-              OUT=$(ods review validate --stdin 2>&1) || { capture_result "$OUT"; exit 1; }
-            fi
-            capture_result "$OUT"
-            ;;
-          ci-failure)
-            OUT=$(echo "" | ods ci parse 2>&1) || { capture_result "$OUT"; exit 1; }
-            capture_result "$OUT"
-            ;;
-          release-readiness)
-            OUT=$(ods release check --version "$RELEASE_VERSION" 2>&1) || { capture_result "$OUT"; exit 1; }
-            capture_result "$OUT"
-            ;;
-          approval-workflow)
-            OUT=$(ods approval check --pr "$PR_NUMBER" 2>&1) || { capture_result "$OUT"; exit 1; }
-            capture_result "$OUT"
-            ;;
-          rollback-plan)
-            OUT=$(ods validate rollback --file "$ROLLBACK_PLAN" 2>&1) || { capture_result "$OUT"; exit 1; }
-            capture_result "$OUT"
-            ;;
-          prod-evidence)
-            OUT=$(ods evidence verify "$EVIDENCE_BUNDLE" 2>&1) || { capture_result "$OUT"; exit 1; }
-            capture_result "$OUT"
+            run_pr_check || { finish; exit 1; }
             ;;
           all)
             if [ -n "$BRANCH_NAME" ]; then
-              OUT=$(ods validate branch "$BRANCH_NAME" 2>&1) || { capture_result "$OUT"; exit 1; }
-              capture_result "$OUT"
+              RAN_CHECK=1
+              run_branch_check || { finish; exit 1; }
+            else
+              echo "Skipping branch-naming: branch_name not provided"
             fi
             if [ -n "$COMMIT_MESSAGE" ]; then
-              OUT=$(echo "$COMMIT_MESSAGE" | ods validate commit --stdin 2>&1) || { capture_result "$OUT"; exit 1; }
-              capture_result "$OUT"
+              RAN_CHECK=1
+              run_commit_check || { finish; exit 1; }
+            else
+              echo "Skipping commit-message: commit_message not provided"
             fi
             if [ -n "$PR_BODY" ]; then
-              OUT=$(echo "$PR_BODY" | ods validate pr --stdin 2>&1) || { capture_result "$OUT"; exit 1; }
-              capture_result "$OUT"
+              RAN_CHECK=1
+              run_pr_check || { finish; exit 1; }
+            else
+              echo "Skipping pr-description: pr_body not provided"
             fi
-            if [ -n "$REVIEW_RECORD" ]; then
-              OUT=$(ods review validate --file "$REVIEW_RECORD" 2>&1) || { capture_result "$OUT"; exit 1; }
-              capture_result "$OUT"
+            if [ "$RAN_CHECK" -eq 0 ]; then
+              echo "No M1 inputs provided. Supply at least one of branch_name, commit_message, or pr_body."
+              RESULT="non-conformant"
+              finish
+              exit 1
             fi
-            if [ -n "$ROLLBACK_PLAN" ]; then
-              OUT=$(ods validate rollback --file "$ROLLBACK_PLAN" 2>&1) || { capture_result "$OUT"; exit 1; }
-              capture_result "$OUT"
-            fi
-            if [ -n "$EVIDENCE_BUNDLE" ]; then
-              OUT=$(ods evidence verify "$EVIDENCE_BUNDLE" 2>&1) || { capture_result "$OUT"; exit 1; }
-              capture_result "$OUT"
-            fi
-            if [ -n "$RELEASE_VERSION" ]; then
-              OUT=$(ods release check --version "$RELEASE_VERSION" 2>&1) || { capture_result "$OUT"; exit 1; }
-              capture_result "$OUT"
-            fi
+            ;;
+          ai-review|ci-failure|release-readiness|approval-workflow|rollback-plan|prod-evidence)
+            echo "Check '$CHECK' is experimental and is not enforced by validate-action yet."
+            echo "Use the ODS CLI validate subcommands directly for draft module schema checks."
+            RESULT="non-conformant"
+            finish
+            exit 1
             ;;
           *)
             echo "Unknown check: $CHECK"
+            RESULT="non-conformant"
+            finish
             exit 1
             ;;
         esac
+        finish
