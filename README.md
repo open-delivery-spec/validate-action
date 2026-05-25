@@ -4,143 +4,99 @@
 
 GitHub Action to validate delivery artifacts against [Open Delivery Spec](https://github.com/open-delivery-spec/spec) standards.
 
-## Usage
+- `branch-naming`
+- `commit-message`
+- `pr-description`
+- `all`
 
-### Branch Naming Check
+Draft checks for AI review, CI failure, release readiness, approval workflow, rollback plans, and production evidence are intentionally not enforced by this Action yet. Use the ODS CLI `validate` commands directly when experimenting with draft module schemas.
+
+## Pull Request L1 Check
 
 ```yaml
-name: ODS Branch Naming
+name: ODS L1
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, edited, synchronize, reopened]
 
 jobs:
-  branch-check:
+  ods:
     runs-on: ubuntu-latest
     steps:
       - uses: open-delivery-spec/validate-action@v1
         with:
-          check: branch-naming
+          check: all
           branch_name: ${{ github.head_ref }}
+          pr_body: ${{ github.event.pull_request.body }}
+          strict: "true"
 ```
 
-### Commit Message Check
+`all` runs only the M1 checks that have input. In the example above, it validates branch naming and PR description. It skips commit-message validation because pull request events do not expose a single canonical commit message.
+
+## Commit Message Check
 
 ```yaml
 name: ODS Commit Message
-on: [push, pull_request]
+on: [push]
 
 jobs:
   commit-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: open-delivery-spec/validate-action@v1
         with:
           check: commit-message
           commit_message: ${{ github.event.head_commit.message }}
+          strict: "true"
 ```
 
-### PR Description Check
+## Individual Checks
+
+### Branch Naming
 
 ```yaml
-name: ODS PR Description
-on:
-  pull_request:
-    types: [opened, edited]
-
-jobs:
-  pr-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: open-delivery-spec/validate-action@v1
-        with:
-          check: pr-description
-          pr_body: ${{ github.event.pull_request.body }}
+- uses: open-delivery-spec/validate-action@v1
+  with:
+    check: branch-naming
+    branch_name: ${{ github.head_ref }}
 ```
 
-### AI Review Check
+### PR Description
 
 ```yaml
-name: ODS AI Review
-on:
-  pull_request:
-    types: [opened, synchronize]
-
-jobs:
-  ai-review-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: open-delivery-spec/validate-action@v1
-        with:
-          check: ai-review
-          review_record: ".ods/reviews/pr-${{ github.event.pull_request.number }}-review.json"
+- uses: open-delivery-spec/validate-action@v1
+  with:
+    check: pr-description
+    pr_body: ${{ github.event.pull_request.body }}
 ```
 
-### Release Readiness Check
+### Commit Message
 
 ```yaml
-name: ODS Release Readiness
-on:
-  release:
-    types: [published]
-
-jobs:
-  release-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: open-delivery-spec/validate-action@v1
-        with:
-          check: release-readiness
-          release_version: ${{ github.ref_name }}
-```
-
-### All Checks
-
-```yaml
-name: ODS All Checks
-on:
-  pull_request:
-    types: [opened, synchronize]
-
-jobs:
-  ods-all:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: open-delivery-spec/validate-action@v1
-        with:
-          check: all
-          pr_number: ${{ github.event.pull_request.number }}
-          strict: 'true'
+- uses: open-delivery-spec/validate-action@v1
+  with:
+    check: commit-message
+    commit_message: ${{ github.event.head_commit.message }}
 ```
 
 ## Inputs
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `check` | Yes | `all` | Check type: `branch-naming`, `commit-message`, `pr-description`, `ai-review`, `ci-failure`, `release-readiness`, `approval-workflow`, `rollback-plan`, `prod-evidence`, `all` |
-| `branch_name` | For `branch-naming` | — | Branch name to validate |
-| `commit_message` | For `commit-message` | — | Commit message to validate |
-| `pr_body` | For `pr-description` | — | PR description body |
-| `pr_number` | For `approval-workflow` | — | PR number |
-| `review_record` | For `ai-review` | — | Path to AI review record JSON file |
-| `rollback_plan` | For `rollback-plan` | — | Path to rollback plan JSON file |
-| `evidence_bundle` | For `prod-evidence` | — | Path to evidence bundle JSON file |
-| `release_version` | For `release-readiness` | — | Release version |
-| `strict` | No | `false` | Fail on warnings too |
+| `check` | Yes | `all` | `branch-naming`, `commit-message`, `pr-description`, or `all` |
+| `branch_name` | For `branch-naming` | - | Branch name to validate |
+| `commit_message` | For `commit-message` | - | Commit message to validate |
+| `pr_body` | For `pr-description` | - | PR description body |
+| `strict` | No | `false` | Fail on warnings as well as errors |
+| `spec_version` | No | `1.0.0` | Reserved for future spec-version selection |
+
+Reserved inputs such as `pr_number`, `review_record`, `release_version`, `rollback_plan`, and `evidence_bundle` are present for forward compatibility but are not enforced by M1 checks.
 
 ## Outputs
 
 | Output | Description |
 |--------|-------------|
 | `result` | `conformant`, `conformant-with-warnings`, or `non-conformant` |
-| `score` | Release readiness score (0-100) |
-| `details` | JSON validation details |
 
 ## License
 

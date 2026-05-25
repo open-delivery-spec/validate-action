@@ -1,114 +1,96 @@
-name: Self-Test
+name: Self Test
 
 on:
   push:
-    branches: [main, master]
   pull_request:
-    types: [opened, synchronize, reopened]
 
 jobs:
-  # ── Dogfood: use this action to validate itself ─────────────
-  self-test:
-    name: Eat Our Own Dogfood
+  m1-checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.22"
-
-      - name: Install ODS CLI
-        run: go install github.com/open-delivery-spec/cli/cmd/ods@main
-
-      - name: Branch naming (happy)
+      - name: Branch naming
         uses: ./
         with:
           check: branch-naming
-          branch_name: "feature/add-ci-dogfood"
+          branch_name: feature/add-oauth-login
 
-      - name: Branch naming (invalid)
+      - name: Invalid branch is rejected
         id: bad-branch
         continue-on-error: true
         uses: ./
         with:
           check: branch-naming
-          branch_name: "BadBranch"
+          branch_name: BadBranch
 
-      - name: Verify invalid branch was caught
+      - name: Verify invalid branch failed
         if: steps.bad-branch.outcome != 'failure'
         run: |
-          echo "Expected branch-naming to fail for 'BadBranch' but it passed!"
+          echo "Expected branch-naming to fail for BadBranch"
           exit 1
 
-      - name: Commit message (happy)
+      - name: Commit message
         uses: ./
         with:
           check: commit-message
           commit_message: |
-            feat(ci): add self-test workflow
+            feat(auth): add OAuth login
 
             AI-assisted: true
             AI-tool: GitHub Copilot
+            AI-scope: auth module
 
-      - name: PR description (happy)
+      - name: PR description
         uses: ./
         with:
           check: pr-description
           pr_body: |
             ## Summary
-            Add self-test workflow for the GitHub Action
+            Add OAuth login.
 
             ## Type
             - [x] Feature
 
             ## AI Disclosure
-            This PR contains AI-generated code
-            AI Tool: GitHub Copilot
+            - [x] This PR contains AI-generated code
+            - AI Tool: GitHub Copilot
 
             ## Changes
-            - Added .github/workflows/self-test.yml
+            - Added provider integration.
 
             ## Testing
-            - [x] Manual testing performed
+            - Unit tests added.
 
             ## Checklist
-            - [x] Branch naming follows ODS
+            - [x] Branch follows ODS.
 
-      - name: AI review (happy)
+      - name: All available M1 checks
         uses: ./
         with:
-          check: ai-review
-          review_record: "./test-fixtures/ai-review-valid.json"
+          check: all
+          branch_name: feature/add-oauth-login
+          commit_message: |
+            feat(auth): add OAuth login
 
-      - name: Rollback plan (happy)
-        uses: ./
-        with:
-          check: rollback-plan
-          rollback_plan: "./test-fixtures/rollback-plan-valid.json"
+            AI-assisted: true
+            AI-tool: GitHub Copilot
+          pr_body: |
+            ## Summary
+            Add OAuth login.
 
-      - name: Evidence bundle (happy)
-        uses: ./
-        with:
-          check: prod-evidence
-          evidence_bundle: "./test-fixtures/evidence-valid.json"
+            ## Type
+            - [x] Feature
 
-  # ── Validate action.yml syntax ───────────────────────────────
-  lint-action:
-    name: Lint action.yml
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
+            ## AI Disclosure
+            - [x] This PR contains AI-generated code
+            - AI Tool: GitHub Copilot
 
-      - name: Check YAML syntax
-        run: python3 -c "import yaml; yaml.safe_load(open('action.yml')); print('action.yml is valid YAML')"
+            ## Changes
+            - Added provider integration.
 
-      - name: Check required fields in action.yml
-        run: >
-          python3 -c "import yaml; a = yaml.safe_load(open('action.yml'));
-          assert a['name'], 'name is required';
-          assert a['description'], 'description is required';
-          assert a['runs']['using'] == 'composite', 'must be composite action';
-          assert 'inputs' in a, 'inputs is required';
-          assert 'check' in a['inputs'], 'check input is required';
-          print('action.yml structure is valid')"
+            ## Testing
+            - Unit tests added.
+
+            ## Checklist
+            - [x] Branch follows ODS.
