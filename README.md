@@ -1,8 +1,8 @@
-# ODS GitHub Action
+# ODS Validate Action
 
 [![CI](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml/badge.svg)](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml)
 
-GitHub Action for the production-ready ODS M1 checks:
+GitHub Action to validate delivery artifacts against [Open Delivery Spec](https://github.com/open-delivery-spec/spec) standards.
 
 - `branch-naming`
 - `commit-message`
