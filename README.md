@@ -77,7 +77,7 @@ jobs:
       - uses: open-delivery-spec/github-action@v1
         with:
           check: ai-review
-          pr_number: ${{ github.event.pull_request.number }}
+          review_record: ".ods/reviews/pr-${{ github.event.pull_request.number }}-review.json"
 ```
 
 ### Release Readiness Check
@@ -127,7 +127,8 @@ jobs:
 | `branch_name` | For `branch-naming` | — | Branch name to validate |
 | `commit_message` | For `commit-message` | — | Commit message to validate |
 | `pr_body` | For `pr-description` | — | PR description body |
-| `pr_number` | For `ai-review`, `approval-workflow` | — | PR number |
+| `pr_number` | For `approval-workflow` | — | PR number |
+| `review_record` | For `ai-review` | — | Path to AI review record JSON file |
 | `rollback_plan` | For `rollback-plan` | — | Path to rollback plan JSON file |
 | `evidence_bundle` | For `prod-evidence` | — | Path to evidence bundle JSON file |
 | `release_version` | For `release-readiness` | — | Release version |

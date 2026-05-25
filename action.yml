@@ -27,7 +27,11 @@ inputs:
     required: false
 
   pr_number:
-    description: 'PR number for AI review checks'
+    description: 'PR number for AI review and approval checks'
+    required: false
+
+  review_record:
+    description: 'Path to AI review record JSON file (for ai-review and all checks)'
     required: false
 
   release_version:
@@ -80,6 +84,7 @@ runs:
         RELEASE_VERSION: ${{ inputs.release_version }}
         ROLLBACK_PLAN: ${{ inputs.rollback_plan }}
         EVIDENCE_BUNDLE: ${{ inputs.evidence_bundle }}
+        REVIEW_RECORD: ${{ inputs.review_record }}
         STRICT: ${{ inputs.strict }}
       run: |
         # Capture ODS output and write action outputs
@@ -109,7 +114,11 @@ runs:
             capture_result "$OUT"
             ;;
           ai-review)
-            OUT=$(ods review validate --pr "$PR_NUMBER" 2>&1) || { capture_result "$OUT"; exit 1; }
+            if [ -n "$REVIEW_RECORD" ]; then
+              OUT=$(ods review validate --file "$REVIEW_RECORD" 2>&1) || { capture_result "$OUT"; exit 1; }
+            else
+              OUT=$(ods review validate --stdin 2>&1) || { capture_result "$OUT"; exit 1; }
+            fi
             capture_result "$OUT"
             ;;
           ci-failure)
@@ -143,6 +152,10 @@ runs:
             fi
             if [ -n "$PR_BODY" ]; then
               OUT=$(echo "$PR_BODY" | ods validate pr --stdin 2>&1) || { capture_result "$OUT"; exit 1; }
+              capture_result "$OUT"
+            fi
+            if [ -n "$REVIEW_RECORD" ]; then
+              OUT=$(ods review validate --file "$REVIEW_RECORD" 2>&1) || { capture_result "$OUT"; exit 1; }
               capture_result "$OUT"
             fi
             if [ -n "$ROLLBACK_PLAN" ]; then
