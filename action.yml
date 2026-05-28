@@ -209,6 +209,111 @@ runs:
         path: ${{ inputs.output-dir }}/
         retention-days: ${{ inputs.artifact-retention-days }}
 
+    - name: Comment on Pull Request
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: |
+        set -u
+
+        if [ -z "${GH_TOKEN:-}" ]; then
+          echo "::warning::Skipping ODS PR comment because github-token is empty."
+          exit 0
+        fi
+
+        if [ ! -f "$OUTPUT_DIR/ods-summary.md" ]; then
+          echo "::warning::Skipping ODS PR comment because $OUTPUT_DIR/ods-summary.md was not found."
+          exit 0
+        fi
+
+        PR_NUMBER=$(python3 - <<'PY'
+        import json
+        import os
+
+        with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as handle:
+            event = json.load(handle)
+
+        pull_request = event.get("pull_request") or {}
+        print(pull_request.get("number") or event.get("number") or "")
+        PY
+        )
+
+        if [ -z "$PR_NUMBER" ]; then
+          echo "::warning::Skipping ODS PR comment because pull request number was not detected."
+          exit 0
+        fi
+
+        RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        COMMENT_BODY=$(mktemp)
+        COMMENT_JSON=$(mktemp)
+        COMMENTS_JSON=$(mktemp)
+
+        {
+          echo "<!-- ods-compliance-report -->"
+          cat "$OUTPUT_DIR/ods-summary.md"
+          echo
+          echo "[View workflow run]($RUN_URL)"
+          echo "[Download compliance artifact]($RUN_URL)"
+        } > "$COMMENT_BODY"
+
+        python3 - "$COMMENT_BODY" "$COMMENT_JSON" <<'PY'
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as handle:
+            body = handle.read()
+
+        with open(sys.argv[2], "w", encoding="utf-8") as handle:
+            json.dump({"body": body}, handle)
+        PY
+
+        COMMENTS_URL="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments"
+        if ! curl -fsSL \
+          -H "Authorization: Bearer ${GH_TOKEN}" \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          "${COMMENTS_URL}?per_page=100" \
+          -o "$COMMENTS_JSON"; then
+          echo "::warning::Unable to list PR comments for ODS report."
+          exit 0
+        fi
+
+        COMMENT_ID=$(python3 - "$COMMENTS_JSON" <<'PY'
+        import json
+        import sys
+
+        marker = "<!-- ods-compliance-report -->"
+        with open(sys.argv[1], encoding="utf-8") as handle:
+            comments = json.load(handle)
+
+        for comment in comments:
+            if marker in (comment.get("body") or ""):
+                print(comment.get("id", ""))
+                break
+        PY
+        )
+
+        if [ -n "$COMMENT_ID" ]; then
+          METHOD="PATCH"
+          URL="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}"
+        else
+          METHOD="POST"
+          URL="$COMMENTS_URL"
+        fi
+
+        if ! curl -fsSL \
+          -X "$METHOD" \
+          -H "Authorization: Bearer ${GH_TOKEN}" \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          "$URL" \
+          --data-binary "@${COMMENT_JSON}" \
+          >/dev/null; then
+          echo "::warning::Unable to create or update ODS PR comment."
+        fi
+
     - name: Check ODS Compliance Result
       shell: bash
       env:
