@@ -3,6 +3,7 @@ name: Self Test
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   m1-checks:
