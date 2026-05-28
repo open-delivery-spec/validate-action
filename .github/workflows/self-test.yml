@@ -7,22 +7,32 @@ on:
 jobs:
   m1-checks:
     runs-on: ubuntu-latest
+    env:
+      ODS_CLI_REF: ${{ (github.head_ref == 'feature/ods-compliance-report-display' || github.ref_name == 'feature/ods-compliance-report-display') && '3f701c6b58da45f130f56431ee997e07d4a0dea7' || 'main' }}
     steps:
       - uses: actions/checkout@v6
 
       - name: Branch naming
         uses: ./
         with:
+          cli-ref: ${{ env.ODS_CLI_REF }}
           check: branch-naming
           branch_name: feature/add-oauth-login
+          summary: "false"
+          comment: "false"
+          artifact: "false"
 
       - name: Invalid branch is rejected
         id: bad-branch
         continue-on-error: true
         uses: ./
         with:
+          cli-ref: ${{ env.ODS_CLI_REF }}
           check: branch-naming
           branch_name: BadBranch
+          summary: "false"
+          comment: "false"
+          artifact: "false"
 
       - name: Verify invalid branch failed
         if: steps.bad-branch.outcome != 'failure'
@@ -33,6 +43,7 @@ jobs:
       - name: Commit message
         uses: ./
         with:
+          cli-ref: ${{ env.ODS_CLI_REF }}
           check: commit-message
           commit_message: |
             feat(auth): add OAuth login
@@ -40,10 +51,14 @@ jobs:
             AI-assisted: true
             AI-tool: GitHub Copilot
             AI-scope: auth module
+          summary: "false"
+          comment: "false"
+          artifact: "false"
 
       - name: PR description
         uses: ./
         with:
+          cli-ref: ${{ env.ODS_CLI_REF }}
           check: pr-description
           pr_body: |
             ## Summary
@@ -64,11 +79,17 @@ jobs:
 
             ## Checklist
             - [x] Branch follows ODS.
+          summary: "false"
+          comment: "false"
+          artifact: "false"
 
       - name: All available M1 checks
         uses: ./
         with:
+          cli-ref: ${{ env.ODS_CLI_REF }}
           check: all
+          output-dir: ods-report-self-test
+          comment: "false"
           branch_name: feature/add-oauth-login
           commit_message: |
             feat(auth): add OAuth login
@@ -94,3 +115,10 @@ jobs:
 
             ## Checklist
             - [x] Branch follows ODS.
+
+      - name: Verify report files were generated
+        run: |
+          test -f ods-report-self-test/index.html
+          test -f ods-report-self-test/ods-compliance.json
+          test -f ods-report-self-test/ods-compliance.svg
+          test -f ods-report-self-test/ods-summary.md
