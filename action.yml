@@ -54,9 +54,60 @@ inputs:
     required: false
     default: '1.0.0'
 
+  profile:
+    description: 'ODS compliance profile'
+    required: false
+    default: 'l1'
+
+  report:
+    description: 'Report format to generate'
+    required: false
+    default: 'html'
+
+  summary:
+    description: 'Write ODS report Markdown to the GitHub Actions job summary'
+    required: false
+    default: 'true'
+
+  comment:
+    description: 'Create or update an ODS report comment on pull requests'
+    required: false
+    default: 'true'
+
+  artifact:
+    description: 'Upload the generated ODS report directory as a workflow artifact'
+    required: false
+    default: 'true'
+
+  output-dir:
+    description: 'Directory where ODS report files are written'
+    required: false
+    default: 'ods-report'
+
+  artifact-name:
+    description: 'Workflow artifact name for the generated ODS report'
+    required: false
+    default: 'ods-compliance-report'
+
+  artifact-retention-days:
+    description: 'Number of days to retain the uploaded ODS report artifact'
+    required: false
+    default: '30'
+
+  github-token:
+    description: 'GitHub token used for PR comments'
+    required: false
+    default: ${{ github.token }}
+
+  cli-ref:
+    description: 'ODS CLI version, tag, branch, or commit to install'
+    required: false
+    default: 'main'
+
 outputs:
   result:
     description: 'conformant | conformant-with-warnings | non-conformant'
+    value: ${{ steps.report.outputs.result }}
 
 runs:
   using: composite
@@ -68,10 +119,12 @@ runs:
 
     - name: Install ODS CLI
       shell: bash
-      run: go install github.com/open-delivery-spec/cli/cmd/ods@main
+      env:
+        CLI_REF: ${{ inputs.cli-ref }}
+      run: go install "github.com/open-delivery-spec/cli/cmd/ods@${CLI_REF}"
 
-    - name: Run ODS Check
-      id: ods
+    - name: Generate ODS Report
+      id: report
       shell: bash
       env:
         CHECK: ${{ inputs.check }}
@@ -79,11 +132,8 @@ runs:
         COMMIT_MESSAGE: ${{ inputs.commit_message }}
         PR_BODY: ${{ inputs.pr_body }}
         PR_NUMBER: ${{ inputs.pr_number }}
-        RELEASE_VERSION: ${{ inputs.release_version }}
-        ROLLBACK_PLAN: ${{ inputs.rollback_plan }}
-        EVIDENCE_BUNDLE: ${{ inputs.evidence_bundle }}
-        REVIEW_RECORD: ${{ inputs.review_record }}
         STRICT: ${{ inputs.strict }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
       run: |
         set -u
 
@@ -92,112 +142,78 @@ runs:
           STRICT_FLAG="--strict"
         fi
 
-        RESULT="conformant"
-        RAN_CHECK=0
-
-        set_result_from_output() {
-          local output="$1"
-          if echo "$output" | grep -q "non-conformant"; then
-            RESULT="non-conformant"
-          elif echo "$output" | grep -q "conformant with warnings" && [ "$RESULT" = "conformant" ]; then
-            RESULT="conformant-with-warnings"
-          fi
-        }
-
-        run_branch_check() {
-          if [ -z "$BRANCH_NAME" ]; then
-            echo "branch-naming requires branch_name"
-            RESULT="non-conformant"
-            return 2
-          fi
-          echo "Running ODS branch-naming check"
-          OUT=$(ods validate branch "$BRANCH_NAME" $STRICT_FLAG 2>&1)
-          STATUS=$?
-          echo "$OUT"
-          set_result_from_output "$OUT"
-          return $STATUS
-        }
-
-        run_commit_check() {
-          if [ -z "$COMMIT_MESSAGE" ]; then
-            echo "commit-message requires commit_message"
-            RESULT="non-conformant"
-            return 2
-          fi
-          echo "Running ODS commit-message check"
-          OUT=$(printf "%s" "$COMMIT_MESSAGE" | ods validate commit --stdin $STRICT_FLAG 2>&1)
-          STATUS=$?
-          echo "$OUT"
-          set_result_from_output "$OUT"
-          return $STATUS
-        }
-
-        run_pr_check() {
-          if [ -z "$PR_BODY" ]; then
-            echo "pr-description requires pr_body"
-            RESULT="non-conformant"
-            return 2
-          fi
-          echo "Running ODS pr-description check"
-          OUT=$(printf "%s" "$PR_BODY" | ods validate pr --stdin $STRICT_FLAG 2>&1)
-          STATUS=$?
-          echo "$OUT"
-          set_result_from_output "$OUT"
-          return $STATUS
-        }
-
-        finish() {
-          echo "result=$RESULT" >> "$GITHUB_OUTPUT"
-        }
-
         case "$CHECK" in
-          branch-naming)
-            run_branch_check || { finish; exit 1; }
-            ;;
-          commit-message)
-            run_commit_check || { finish; exit 1; }
-            ;;
-          pr-description)
-            run_pr_check || { finish; exit 1; }
-            ;;
-          all)
-            if [ -n "$BRANCH_NAME" ]; then
-              RAN_CHECK=1
-              run_branch_check || { finish; exit 1; }
-            else
-              echo "Skipping branch-naming: branch_name not provided"
-            fi
-            if [ -n "$COMMIT_MESSAGE" ]; then
-              RAN_CHECK=1
-              run_commit_check || { finish; exit 1; }
-            else
-              echo "Skipping commit-message: commit_message not provided"
-            fi
-            if [ -n "$PR_BODY" ]; then
-              RAN_CHECK=1
-              run_pr_check || { finish; exit 1; }
-            else
-              echo "Skipping pr-description: pr_body not provided"
-            fi
-            if [ "$RAN_CHECK" -eq 0 ]; then
-              echo "No M1 inputs provided. Supply at least one of branch_name, commit_message, or pr_body."
-              RESULT="non-conformant"
-              finish
-              exit 1
-            fi
+          branch-naming|commit-message|pr-description|all)
             ;;
           ai-review|ci-failure|release-readiness|approval-workflow|rollback-plan|prod-evidence)
             echo "Check '$CHECK' is experimental and is not enforced by validate-action yet."
             echo "Use the ODS CLI validate subcommands directly for draft module schema checks."
-            RESULT="non-conformant"
-            finish
+            echo "result=non-conformant" >> "$GITHUB_OUTPUT"
             exit 1
             ;;
           *)
             echo "Unknown check: $CHECK"
-            RESULT="non-conformant"
-            finish
+            echo "result=non-conformant" >> "$GITHUB_OUTPUT"
             exit 1
             ;;
         esac
-        finish
+
+        export ODS_REPORT_CHECK="$CHECK"
+        export ODS_BRANCH_NAME="$BRANCH_NAME"
+        export ODS_COMMIT_MESSAGE="$COMMIT_MESSAGE"
+        export ODS_PR_BODY="$PR_BODY"
+        export ODS_PR_NUMBER="$PR_NUMBER"
+
+        set +e
+        ods report --output "$OUTPUT_DIR" $STRICT_FLAG
+        REPORT_STATUS=$?
+        set -e
+
+        if [ -f "$OUTPUT_DIR/ods-compliance.json" ]; then
+          RESULT=$(python3 - "$OUTPUT_DIR/ods-compliance.json" <<'PY'
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as handle:
+            status = json.load(handle).get("status", "non_compliant")
+
+        print({
+            "compliant": "conformant",
+            "compliant_with_warnings": "conformant-with-warnings",
+            "non_compliant": "non-conformant",
+        }.get(status, "non-conformant"))
+        PY
+        )
+        else
+          RESULT="non-conformant"
+        fi
+
+        echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+        echo "report_status=$REPORT_STATUS" >> "$GITHUB_OUTPUT"
+
+    - name: Add ODS Job Summary
+      if: inputs.summary == 'true'
+      shell: bash
+      env:
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: |
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f "$OUTPUT_DIR/ods-summary.md" ]; then
+          cat "$OUTPUT_DIR/ods-summary.md" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload ODS Report
+      if: inputs.artifact == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.output-dir }}/
+        retention-days: ${{ inputs.artifact-retention-days }}
+
+    - name: Check ODS Compliance Result
+      shell: bash
+      env:
+        REPORT_STATUS: ${{ steps.report.outputs.report_status }}
+      run: |
+        if [ "$REPORT_STATUS" != "0" ]; then
+          exit "$REPORT_STATUS"
+        fi
