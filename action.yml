@@ -100,7 +100,7 @@ inputs:
     default: ${{ github.token }}
 
   cli-ref:
-    description: 'ODS CLI version, tag, branch, or commit to install'
+    description: 'ODS CLI version, tag, or commit to install'
     required: false
     default: 'main'
 

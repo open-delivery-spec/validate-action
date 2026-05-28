@@ -119,7 +119,7 @@ jobs:
 | `artifact-name` | No | `ods-compliance-report` | Uploaded artifact name |
 | `artifact-retention-days` | No | `30` | Uploaded artifact retention period |
 | `github-token` | No | `${{ github.token }}` | Token used for PR comments |
-| `cli-ref` | No | `main` | ODS CLI ref to install |
+| `cli-ref` | No | `main` | ODS CLI version, tag, or commit to install |
 
 Reserved inputs such as `pr_number`, `review_record`, `release_version`, `rollback_plan`, and `evidence_bundle` are present for forward compatibility but are not enforced by M1 checks.
 
