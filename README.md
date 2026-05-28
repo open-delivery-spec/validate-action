@@ -19,6 +19,11 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   ods:
     runs-on: ubuntu-latest
@@ -31,7 +36,23 @@ jobs:
           strict: "true"
 ```
 
-`all` runs only the M1 checks that have input. In the example above, it validates branch naming and PR description. It skips commit-message validation because pull request events do not expose a single canonical commit message.
+`all` reports any stable L1 context available from explicit inputs, the GitHub event payload, or local git metadata. In the example above, branch naming and PR description are supplied directly.
+
+By default the action also publishes the compliance result in three places:
+
+- Pull request comment: one `ODS Compliance Report` comment is created and updated on later runs.
+- GitHub Actions summary: `ods-summary.md` is appended to the job summary.
+- Workflow artifact: the full report directory is uploaded as `ods-compliance-report`.
+
+The generated artifact contains:
+
+```text
+ods-report/
+├── index.html
+├── ods-compliance.json
+├── ods-compliance.svg
+└── ods-summary.md
+```
 
 ## Commit Message Check
 
@@ -89,8 +110,29 @@ jobs:
 | `pr_body` | For `pr-description` | - | PR description body |
 | `strict` | No | `false` | Fail on warnings as well as errors |
 | `spec_version` | No | `1.0.0` | Reserved for future spec-version selection |
+| `profile` | No | `l1` | Reserved for future profile selection |
+| `report` | No | `html` | Reserved for future report format selection |
+| `summary` | No | `true` | Append Markdown report to the GitHub Actions job summary |
+| `comment` | No | `true` | Create or update one ODS PR comment |
+| `artifact` | No | `true` | Upload the generated report directory |
+| `output-dir` | No | `ods-report` | Directory for generated report files |
+| `artifact-name` | No | `ods-compliance-report` | Uploaded artifact name |
+| `artifact-retention-days` | No | `30` | Uploaded artifact retention period |
+| `github-token` | No | `${{ github.token }}` | Token used for PR comments |
+| `cli-ref` | No | `main` | ODS CLI ref to install |
 
 Reserved inputs such as `pr_number`, `review_record`, `release_version`, `rollback_plan`, and `evidence_bundle` are present for forward compatibility but are not enforced by M1 checks.
+
+Disable display surfaces when you only want validation:
+
+```yaml
+- uses: open-delivery-spec/validate-action@v1
+  with:
+    check: all
+    summary: "false"
+    comment: "false"
+    artifact: "false"
+```
 
 ## Outputs
 
