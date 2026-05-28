@@ -8,7 +8,7 @@ jobs:
   m1-checks:
     runs-on: ubuntu-latest
     env:
-      ODS_CLI_REF: ${{ (github.head_ref == 'feature/ods-compliance-report-display' || github.ref_name == 'feature/ods-compliance-report-display') && '3f701c6b58da45f130f56431ee997e07d4a0dea7' || 'main' }}
+      ODS_CLI_REF: ${{ (github.head_ref == 'feature/ods-compliance-report-display' || github.ref_name == 'feature/ods-compliance-report-display') && '3f701c6b58da45f130f56431ee997e07d4a0dea7' || 'b42683670' }}
     steps:
       - uses: actions/checkout@v6
 

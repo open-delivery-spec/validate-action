@@ -102,7 +102,7 @@ inputs:
   cli-ref:
     description: 'ODS CLI version, tag, or commit to install'
     required: false
-    default: 'main'
+    default: 'b42683670'
 
 outputs:
   result:
