@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml/badge.svg)](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml)
 
-GitHub Action to validate delivery artifacts against [Open Delivery Spec](https://github.com/open-delivery-spec/spec) standards.
+GitHub Action to validate delivery artifacts against [Open Delivery Spec](https://github.com/open-delivery-spec/spec) standards with configurable compliance policies.
 
 - `branch-naming`
 - `commit-message`
@@ -11,7 +11,9 @@ GitHub Action to validate delivery artifacts against [Open Delivery Spec](https:
 
 Draft checks for AI review, CI failure, release readiness, approval workflow, rollback plans, and production evidence are intentionally not enforced by this Action yet. Use the ODS CLI `validate` commands directly when experimenting with draft module schemas.
 
-## Pull Request L1 Check
+## Quick Start
+
+### Pull Request L1 Check
 
 ```yaml
 name: ODS L1
@@ -36,13 +38,56 @@ jobs:
           strict: "true"
 ```
 
+### Policy Profiles
+
+Choose a compliance policy that matches your organization's needs:
+
+| Profile | AI Disclosure | Commit Scope | Tickets | Best For |
+|---------|:---:|:---:|:---:|---|
+| `oss` | Optional | Optional | No | Open-source projects |
+| `enterprise` _(default)_ | Required | Required | No | Most teams |
+| `regulated` | Required | Required | Yes | Finance, healthcare, gov |
+
+```yaml
+- uses: open-delivery-spec/validate-action@v1
+  with:
+    check: all
+    profile: enterprise  # or oss, regulated
+```
+
+Or configure fine-grained rules via a `.ods.yaml` in your repository root. See [examples/ods-policy-oss.yaml](https://github.com/open-delivery-spec/spec/blob/main/examples/ods-policy-oss.yaml) and [examples/ods-policy-regulated.yaml](https://github.com/open-delivery-spec/spec/blob/main/examples/ods-policy-regulated.yaml).
+
+### Fix Suggestions (PR Comments)
+
+When checks fail, the action automatically generates **copy-paste fix templates** in the PR comment. Developers see exactly what to fix:
+
+```markdown
+## 🔧 Fix Suggestions
+
+### Branch naming
+**1. Use a valid branch type**
+Replace 'feat' with one of: feature, bugfix, hotfix, release, chore
+```
+feature/add-oauth-login
+```
+
+### PR description
+**1. Add missing PR sections**
+Your PR is missing 2 required section(s).
+```
+## AI Disclosure
+- [ ] This PR contains AI-generated code
+...
+```
+```
+
 `all` reports any stable L1 context available from explicit inputs, the GitHub event payload, or local git metadata. In the example above, branch naming and PR description are supplied directly.
 
 By default the action also publishes the compliance result in three places:
 
-- Pull request comment: one `ODS Compliance Report` comment is created and updated on later runs.
-- GitHub Actions summary: `ods-summary.md` is appended to the job summary.
-- Workflow artifact: the full report directory is uploaded as `ods-compliance-report`.
+- Pull request comment: one `ODS Compliance Report` comment is created and updated on later runs, with fix suggestions when applicable.
+- GitHub Actions summary: `ods-summary.md` is appended to the job summary, with fix suggestions.
+- Workflow artifact: the full report directory is uploaded as `ods-compliance-report` with an enhanced HTML dashboard.
 
 The generated artifact contains:
 
@@ -110,7 +155,7 @@ jobs:
 | `pr_body` | For `pr-description` | - | PR description body |
 | `strict` | No | `false` | Fail on warnings as well as errors |
 | `spec_version` | No | `1.0.0` | Reserved for future spec-version selection |
-| `profile` | No | `l1` | Reserved for future profile selection |
+| `profile` | No | `enterprise` | Compliance profile: `oss`, `enterprise`, or `regulated` |
 | `report` | No | `html` | Reserved for future report format selection |
 | `summary` | No | `true` | Append Markdown report to the GitHub Actions job summary |
 | `comment` | No | `true` | Create or update one ODS PR comment |

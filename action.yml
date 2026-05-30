@@ -55,9 +55,9 @@ inputs:
     default: '1.0.0'
 
   profile:
-    description: 'ODS compliance profile'
+    description: 'ODS compliance profile: oss, enterprise, or regulated'
     required: false
-    default: 'l1'
+    default: 'enterprise'
 
   report:
     description: 'Report format to generate'
@@ -133,6 +133,7 @@ runs:
         PR_BODY: ${{ inputs.pr_body }}
         PR_NUMBER: ${{ inputs.pr_number }}
         STRICT: ${{ inputs.strict }}
+        PROFILE: ${{ inputs.profile }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
       run: |
         set -u
@@ -140,6 +141,11 @@ runs:
         STRICT_FLAG=""
         if [ "$STRICT" = "true" ]; then
           STRICT_FLAG="--strict"
+        fi
+
+        PROFILE_FLAG=""
+        if [ -n "${PROFILE:-}" ] && [ "$PROFILE" != "l1" ]; then
+          PROFILE_FLAG="--profile=$PROFILE"
         fi
 
         case "$CHECK" in
@@ -165,7 +171,7 @@ runs:
         export ODS_PR_NUMBER="$PR_NUMBER"
 
         set +e
-        ods report --output "$OUTPUT_DIR" $STRICT_FLAG
+        ods report --output "$OUTPUT_DIR" $STRICT_FLAG $PROFILE_FLAG 2>/dev/null
         REPORT_STATUS=$?
         set -e
 
