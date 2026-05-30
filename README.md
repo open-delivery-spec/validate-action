@@ -1,8 +1,27 @@
 # ODS Validate Action
 
 [![CI](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml/badge.svg)](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml)
+[![ODS L1](https://img.shields.io/badge/ODS-L1%20Structured%20Delivery-blue)](https://github.com/open-delivery-spec/spec)
 
-GitHub Action to validate delivery artifacts against [Open Delivery Spec](https://github.com/open-delivery-spec/spec) standards.
+> **Dogfooding:** This Action validates its own PRs using the ODS L1 checks. Every release is ODS-compliant.
+
+**The fastest way to adopt Open Delivery Spec.** Install this Action and get structured PR validation, AI disclosure enforcement, and compliance reports in 5 minutes.
+
+---
+
+## Why ODS?
+
+| Before ODS | After ODS |
+|---|---|
+| `Title: fix stuff` | `fix(auth): handle expired OAuth state parameter` |
+| Empty PR body | Summary, Changes, Testing, AI Disclosure |
+| "What does this do? Was it tested? Did AI write this?" | Reviewer has answers before opening the PR |
+| No CI validation of PR metadata | CI blocks merges with missing sections |
+| No visibility into AI-generated code | Machine-checkable AI disclosure on every PR |
+
+> **ODS does not prove the code is correct.** It proves the delivery process has the minimum structured evidence for humans and machines to review the change responsibly.
+
+---
 
 - `branch-naming`
 - `commit-message`
@@ -48,11 +67,46 @@ The generated artifact contains:
 
 ```text
 ods-report/
-├── index.html
-├── ods-compliance.json
-├── ods-compliance.svg
-└── ods-summary.md
+├── index.html              (standalone HTML report)
+├── ods-compliance.json     (machine-readable JSON)
+├── ods-compliance.svg      (badge for README)
+├── ods-summary.md          (Markdown for job summary)
+└── ods-compliance.sarif    (SARIF v2.1.0 for code scanning)
 ```
+
+### What You'll See
+
+**Passing PR — ODS bot comment:**
+
+> ## ODS Compliance Report
+>
+> Status: ✅ ODS L1 Compliant  
+> Score: 100 / 100  
+> Profile: L1 - AI-aware delivery metadata  
+>
+> | Check | Result | Notes |
+> |---|---|---|
+> | Branch naming | ✅ Pass | feature/add-oauth-login |
+> | Commit message | ✅ Pass | feat(auth): add OAuth login flow |
+> | PR description | ✅ Pass | - |
+>
+> [View workflow run](https://github.com/...)
+
+**Failing PR — ODS bot comment with fix guidance:**
+
+> ## ODS Compliance Report
+>
+> Status: ❌ ODS L1 Non-Compliant  
+> Score: 33 / 100  
+> Profile: L1 - AI-aware delivery metadata  
+>
+> | Check | Result | Notes |
+> |---|---|---|
+> | Branch naming | ✅ Pass | bugfix/fix-token-expiry |
+> | Commit message | ❌ Fail | fix stuff |
+> | PR description | ❌ Fail | missing section: AI Disclosure; missing section: Risk Assessment |
+>
+> [View workflow run](https://github.com/...)
 
 ## Commit Message Check
 
