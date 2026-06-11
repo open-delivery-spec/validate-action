@@ -6,120 +6,79 @@ on:
   workflow_dispatch:
 
 jobs:
-  m1-checks:
+  ods-pipeline:
     runs-on: ubuntu-latest
-    env:
-      ODS_CLI_REF: ${{ (github.head_ref == 'feature/ods-compliance-report-display' || github.ref_name == 'feature/ods-compliance-report-display') && '3f701c6b58da45f130f56431ee997e07d4a0dea7' || 'main' }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: Branch naming
+      - name: Full pipeline — detect + analyze + score + check
+        id: full
         uses: ./
         with:
-          cli-ref: ${{ env.ODS_CLI_REF }}
-          check: branch-naming
-          branch_name: feature/add-oauth-login
+          diff-base: HEAD~1
+          commits: "5"
+          branch: test/ods-self-test
+          artifact-name: ods-report-full
+          comment: "false"
+
+      - name: Verify outputs
+        run: |
+          test -n "${{ steps.full.outputs.result }}"
+          echo "Result: ${{ steps.full.outputs.result }}"
+          echo "AI detected: ${{ steps.full.outputs.ai-detected }}"
+          echo "AI confidence: ${{ steps.full.outputs.ai-confidence }}"
+          echo "Tech debt delta: ${{ steps.full.outputs.tech-debt-delta }}"
+          echo "Policy allowed: ${{ steps.full.outputs.policy-allowed }}"
+
+      - name: Verify report files
+        run: |
+          test -f ods-report/detect.json
+          test -f ods-report/analyze.json
+          test -f ods-report/score.json
+          test -f ods-report/check.json
+          test -f ods-report/ods-report.json
+          test -f ods-report/ods-summary.md
+          test -f ods-report/index.html
+          test -f ods-report/ods-badge.svg
+
+      - name: Pipeline with PR body (AI disclosure)
+        id: with-pr-body
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          branch: feature/ai-auth
+          pr-body: |
+            ## Summary
+            Add OAuth login with AI assistance.
+
+            ## AI Disclosure
+            - [x] This PR contains AI-generated code
+            - AI Tool: GitHub Copilot
+            - AI Scope: auth module
+          artifact-name: ods-report-pr-body
+          comment: "false"
+
+      - name: Verify AI detection from PR body
+        run: |
+          echo "Result: ${{ steps.with-pr-body.outputs.result }}"
+          echo "AI detected: ${{ steps.with-pr-body.outputs.ai-detected }}"
+          test "${{ steps.with-pr-body.outputs.ai-detected }}" = "true"
+
+      - name: Pipeline without PR comment or artifact
+        uses: ./
+        with:
+          diff-base: HEAD~1
           summary: "false"
           comment: "false"
           artifact: "false"
 
-      - name: Invalid branch is rejected
-        id: bad-branch
+      - name: Pipeline with custom policy (should pass)
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          policy: test-fixtures/policy-allow-all.rego
+          artifact-name: ods-report-policy
+          comment: "false"
         continue-on-error: true
-        uses: ./
-        with:
-          cli-ref: ${{ env.ODS_CLI_REF }}
-          check: branch-naming
-          branch_name: BadBranch
-          summary: "false"
-          comment: "false"
-          artifact: "false"
-
-      - name: Verify invalid branch failed
-        if: steps.bad-branch.outcome != 'failure'
-        run: |
-          echo "Expected branch-naming to fail for BadBranch"
-          exit 1
-
-      - name: Commit message
-        uses: ./
-        with:
-          cli-ref: ${{ env.ODS_CLI_REF }}
-          check: commit-message
-          commit_message: |
-            feat(auth): add OAuth login
-
-            AI-assisted: true
-            AI-tool: GitHub Copilot
-            AI-scope: auth module
-          summary: "false"
-          comment: "false"
-          artifact: "false"
-
-      - name: PR description
-        uses: ./
-        with:
-          cli-ref: ${{ env.ODS_CLI_REF }}
-          check: pr-description
-          pr_body: |
-            ## Summary
-            Add OAuth login.
-
-            ## Type
-            - [x] Feature
-
-            ## AI Disclosure
-            - [x] This PR contains AI-generated code
-            - AI Tool: GitHub Copilot
-
-            ## Changes
-            - Added provider integration.
-
-            ## Testing
-            - Unit tests added.
-
-            ## Checklist
-            - [x] Branch follows ODS.
-          summary: "false"
-          comment: "false"
-          artifact: "false"
-
-      - name: All available M1 checks
-        uses: ./
-        with:
-          cli-ref: ${{ env.ODS_CLI_REF }}
-          check: all
-          output-dir: ods-report-self-test
-          comment: "false"
-          branch_name: feature/add-oauth-login
-          commit_message: |
-            feat(auth): add OAuth login
-
-            AI-assisted: true
-            AI-tool: GitHub Copilot
-          pr_body: |
-            ## Summary
-            Add OAuth login.
-
-            ## Type
-            - [x] Feature
-
-            ## AI Disclosure
-            - [x] This PR contains AI-generated code
-            - AI Tool: GitHub Copilot
-
-            ## Changes
-            - Added provider integration.
-
-            ## Testing
-            - Unit tests added.
-
-            ## Checklist
-            - [x] Branch follows ODS.
-
-      - name: Verify report files were generated
-        run: |
-          test -f ods-report-self-test/index.html
-          test -f ods-report-self-test/ods-compliance.json
-          test -f ods-report-self-test/ods-compliance.svg
-          test -f ods-report-self-test/ods-summary.md

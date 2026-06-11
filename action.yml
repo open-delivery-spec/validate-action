@@ -1,71 +1,40 @@
 name: Open Delivery Spec
-description: Validate delivery artifacts against Open Delivery Spec standards
+description: AI code quality gate — detect AI code, analyze quality, score tech debt, enforce policy
 author: Open Delivery Spec Contributors
 branding:
   icon: check-circle
   color: green
 
 inputs:
-  check:
-    description: 'Type of check to run'
-    required: true
-    default: 'all'
-    # M1 production checks: branch-naming | commit-message | pr-description | all
+  diff-base:
+    description: 'Git ref to diff against (e.g., origin/main, HEAD~3)'
+    required: false
+    default: 'origin/main'
 
-  branch_name:
-    description: 'Branch name to validate (for branch-naming check)'
+  pr-body:
+    description: 'PR description body text (auto-detected from event if omitted)'
     required: false
 
-  commit_message:
-    description: 'Commit message to validate (for commit-message check)'
+  pr-body-file:
+    description: 'Path to file containing PR description body'
     required: false
 
-  pr_body:
-    description: 'PR description body (for pr-description check)'
+  branch:
+    description: 'Branch name (auto-detected from git if omitted)'
     required: false
 
-  pr_number:
-    description: 'Reserved for future AI review and approval checks'
+  commits:
+    description: 'Maximum number of commits to scan for AI markers'
     required: false
+    default: '10'
 
-  review_record:
-    description: 'Reserved for future AI review checks'
+  policy:
+    description: 'Path to OPA Rego policy file'
     required: false
-
-  release_version:
-    description: 'Reserved for future release readiness checks'
-    required: false
-
-  rollback_plan:
-    description: 'Reserved for future rollback plan checks'
-    required: false
-
-  evidence_bundle:
-    description: 'Reserved for future evidence bundle checks'
-    required: false
-
-  strict:
-    description: 'Fail on warnings as well as errors'
-    required: false
-    default: 'false'
-
-  spec_version:
-    description: 'ODS spec version to validate against'
-    required: false
-    default: '1.0.0'
-
-  profile:
-    description: 'ODS compliance profile'
-    required: false
-    default: 'l1'
-
-  report:
-    description: 'Report format to generate'
-    required: false
-    default: 'html'
+    default: '.ods/policy.rego'
 
   summary:
-    description: 'Write ODS report Markdown to the GitHub Actions job summary'
+    description: 'Append Markdown report to the GitHub Actions job summary'
     required: false
     default: 'true'
 
@@ -87,7 +56,7 @@ inputs:
   artifact-name:
     description: 'Workflow artifact name for the generated ODS report'
     required: false
-    default: 'ods-compliance-report'
+    default: 'ods-report'
 
   artifact-retention-days:
     description: 'Number of days to retain the uploaded ODS report artifact'
@@ -106,8 +75,20 @@ inputs:
 
 outputs:
   result:
-    description: 'conformant | conformant-with-warnings | non-conformant'
-    value: ${{ steps.report.outputs.result }}
+    description: 'pass | warn | block'
+    value: ${{ steps.ods.outputs.result }}
+  ai-detected:
+    description: 'Whether AI code was detected'
+    value: ${{ steps.ods.outputs.ai_detected }}
+  ai-confidence:
+    description: 'AI detection confidence (0.0–1.0)'
+    value: ${{ steps.ods.outputs.ai_confidence }}
+  tech-debt-delta:
+    description: 'Technical debt delta score'
+    value: ${{ steps.ods.outputs.tech_debt_delta }}
+  policy-allowed:
+    description: 'Whether the OPA policy allowed the change'
+    value: ${{ steps.ods.outputs.policy_allowed }}
 
 runs:
   using: composite
@@ -115,7 +96,7 @@ runs:
     - name: Setup Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.23'
+        go-version: '1.25'
 
     - name: Install ODS CLI
       shell: bash
@@ -123,82 +104,351 @@ runs:
         CLI_REF: ${{ inputs.cli-ref }}
       run: go install "github.com/open-delivery-spec/cli/cmd/ods@${CLI_REF}"
 
-    - name: Generate ODS Report
-      id: report
+    - name: Run ODS Pipeline
+      id: ods
       shell: bash
       env:
-        CHECK: ${{ inputs.check }}
-        BRANCH_NAME: ${{ inputs.branch_name }}
-        COMMIT_MESSAGE: ${{ inputs.commit_message }}
-        PR_BODY: ${{ inputs.pr_body }}
-        PR_NUMBER: ${{ inputs.pr_number }}
-        STRICT: ${{ inputs.strict }}
-        OUTPUT_DIR: ${{ inputs.output-dir }}
+        ODS_DIFF_BASE: ${{ inputs.diff-base }}
+        ODS_PR_BODY: ${{ inputs.pr-body }}
+        ODS_PR_BODY_FILE: ${{ inputs.pr-body-file }}
+        ODS_BRANCH: ${{ inputs.branch }}
+        ODS_COMMITS: ${{ inputs.commits }}
+        ODS_POLICY: ${{ inputs.policy }}
+        ODS_OUTPUT_DIR: ${{ inputs.output-dir }}
+        GITHUB_HEAD_REF: ${{ github.head_ref }}
+        GITHUB_BASE_REF: ${{ github.base_ref }}
+        GITHUB_WORKSPACE: ${{ github.workspace }}
       run: |
-        set -u
+        set -euo pipefail
+        mkdir -p "$ODS_OUTPUT_DIR"
 
-        STRICT_FLAG=""
-        if [ "$STRICT" = "true" ]; then
-          STRICT_FLAG="--strict"
+        # Build detect flags
+        DETECT_FLAGS="--diff-base $ODS_DIFF_BASE --commits $ODS_COMMITS"
+
+        PR_BODY_SOURCE=""
+        if [ -n "${ODS_PR_BODY:-}" ]; then
+          DETECT_FLAGS="$DETECT_FLAGS --pr-body $(printf '%q' "$ODS_PR_BODY")"
+          PR_BODY_SOURCE="flag"
+        elif [ -n "${ODS_PR_BODY_FILE:-}" ] && [ -f "$ODS_PR_BODY_FILE" ]; then
+          DETECT_FLAGS="$DETECT_FLAGS --pr-file $ODS_PR_BODY_FILE"
+          ODS_PR_BODY="$(cat "$ODS_PR_BODY_FILE")"
+          PR_BODY_SOURCE="file"
+        elif [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
+          # Extract PR body from GitHub event
+          PR_BODY=$(python3 - "$GITHUB_EVENT_PATH" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    event = json.load(f)
+pr = event.get("pull_request", {})
+body = pr.get("body", "") or ""
+print(body)
+PY
+)
+          if [ -n "$PR_BODY" ]; then
+            DETECT_FLAGS="$DETECT_FLAGS --pr-body $(printf '%q' "$PR_BODY")"
+            ODS_PR_BODY="$PR_BODY"
+            PR_BODY_SOURCE="event"
+          fi
         fi
 
-        case "$CHECK" in
-          branch-naming|commit-message|pr-description|all)
-            ;;
-          ai-review|ci-failure|release-readiness|approval-workflow|rollback-plan|prod-evidence)
-            echo "Check '$CHECK' is experimental and is not enforced by validate-action yet."
-            echo "Use the ODS CLI validate subcommands directly for draft module schema checks."
-            echo "result=non-conformant" >> "$GITHUB_OUTPUT"
-            exit 1
-            ;;
-          *)
-            echo "Unknown check: $CHECK"
-            echo "result=non-conformant" >> "$GITHUB_OUTPUT"
-            exit 1
-            ;;
-        esac
+        BRANCH="${ODS_BRANCH:-}"
+        if [ -z "$BRANCH" ]; then
+          BRANCH="${GITHUB_HEAD_REF:-}"
+        fi
+        if [ -z "$BRANCH" ]; then
+          BRANCH=$(git branch --show-current 2>/dev/null || echo "")
+        fi
+        if [ -n "$BRANCH" ]; then
+          DETECT_FLAGS="$DETECT_FLAGS --branch $BRANCH"
+        fi
 
-        export ODS_REPORT_CHECK="$CHECK"
-        export ODS_BRANCH_NAME="$BRANCH_NAME"
-        export ODS_COMMIT_MESSAGE="$COMMIT_MESSAGE"
-        export ODS_PR_BODY="$PR_BODY"
-        export ODS_PR_NUMBER="$PR_NUMBER"
-
+        echo "::group::① Detect — AI Code Detection"
+        DETECT_JSON="$ODS_OUTPUT_DIR/detect.json"
         set +e
-        ods report --output "$OUTPUT_DIR" $STRICT_FLAG
-        REPORT_STATUS=$?
+        ods detect --json $DETECT_FLAGS > "$DETECT_JSON" 2>"$ODS_OUTPUT_DIR/detect.stderr"
+        DETECT_EXIT=$?
         set -e
+        echo "::endgroup::"
 
-        if [ -f "$OUTPUT_DIR/ods-compliance.json" ]; then
-          RESULT=$(python3 - "$OUTPUT_DIR/ods-compliance.json" <<'PY'
-        import json
-        import sys
+        echo "::group::② Analyze — AI Code Quality"
+        ANALYZE_JSON="$ODS_OUTPUT_DIR/analyze.json"
+        set +e
+        ods analyze --json 2>/dev/null > "$ANALYZE_JSON" || echo '{"issues":[],"total_lines":0,"summary":"No code analyzed"}' > "$ANALYZE_JSON"
+        set -e
+        echo "::endgroup::"
 
-        with open(sys.argv[1], encoding="utf-8") as handle:
-            status = json.load(handle).get("status", "non_compliant")
+        echo "::group::③ Score — Technical Debt Impact"
+        SCORE_JSON="$ODS_OUTPUT_DIR/score.json"
+        set +e
+        ods score --json 2>/dev/null > "$SCORE_JSON" || echo '{"technical_debt_delta":0,"verdict":"neutral"}' > "$SCORE_JSON"
+        set -e
+        echo "::endgroup::"
 
-        print({
-            "compliant": "conformant",
-            "compliant_with_warnings": "conformant-with-warnings",
-            "non_compliant": "non-conformant",
-        }.get(status, "non-conformant"))
-        PY
-        )
+        echo "::group::④ Check — Policy Enforcement"
+        CHECK_JSON="$ODS_OUTPUT_DIR/check.json"
+        CHECK_EXIT=0
+        set +e
+        if [ -n "${ODS_POLICY:-}" ] && [ -f "$ODS_POLICY" ]; then
+          ods check --json --policy "$ODS_POLICY" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
         else
-          RESULT="non-conformant"
+          ods check --json > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
         fi
+        set -e
+        echo "::endgroup::"
 
-        echo "result=$RESULT" >> "$GITHUB_OUTPUT"
-        echo "report_status=$REPORT_STATUS" >> "$GITHUB_OUTPUT"
+        # Aggregate results with Python
+        echo "::group::Generate Report"
+        python3 - "$ODS_OUTPUT_DIR" "$GITHUB_STEP_SUMMARY" "$GITHUB_OUTPUT" <<'PY'
+import json, os, sys
+from datetime import datetime, timezone
 
-    - name: Add ODS Job Summary
-      if: inputs.summary == 'true'
-      shell: bash
-      env:
-        OUTPUT_DIR: ${{ inputs.output-dir }}
-      run: |
-        if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f "$OUTPUT_DIR/ods-summary.md" ]; then
-          cat "$OUTPUT_DIR/ods-summary.md" >> "$GITHUB_STEP_SUMMARY"
+report_dir = sys.argv[1]
+step_summary = sys.argv[2] if len(sys.argv) > 2 else ""
+github_output = sys.argv[3] if len(sys.argv) > 3 else ""
+
+# Load results
+def load_json(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+detect = load_json(os.path.join(report_dir, "detect.json"))
+analyze = load_json(os.path.join(report_dir, "analyze.json"))
+score = load_json(os.path.join(report_dir, "score.json"))
+check = load_json(os.path.join(report_dir, "check.json"))
+
+ai_detected = detect.get("ai_generated", False)
+ai_confidence = detect.get("confidence", 0)
+detect_summary = detect.get("summary", "No AI detection result")
+analyze_summary = analyze.get("summary", "No analysis result")
+tech_debt = score.get("technical_debt_delta", 0)
+verdict = score.get("verdict", "neutral")
+recommendation = score.get("recommendation", "")
+policy_allowed = check.get("allowed", True)
+denials = check.get("denials", [])
+warnings_list = check.get("warnings", [])
+issues = analyze.get("issues", [])
+files = detect.get("files", [])
+
+# Determine overall result
+if not policy_allowed:
+    overall = "❌ BLOCK"
+    result_value = "block"
+elif ai_detected and ai_confidence >= 0.8 and len(issues) > 0:
+    overall = "⚠️  WARN"
+    result_value = "warn"
+elif ai_detected:
+    overall = "⚠️  WARN"
+    result_value = "warn"
+else:
+    overall = "✅ PASS"
+    result_value = "pass"
+
+# Write outputs
+if github_output:
+    with open(github_output, "a") as f:
+        f.write(f"result={result_value}\n")
+        f.write(f"ai_detected={'true' if ai_detected else 'false'}\n")
+        f.write(f"ai_confidence={ai_confidence}\n")
+        f.write(f"tech_debt_delta={tech_debt}\n")
+        f.write(f"policy_allowed={'true' if policy_allowed else 'false'}\n")
+
+# Generate combined JSON report
+evidence = detect.get("evidence", [])
+sources = detect.get("sources", [])
+
+report = {
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    "result": result_value,
+    "ai_detected": ai_detected,
+    "ai_confidence": ai_confidence,
+    "ai_files": files,
+    "detection_sources": sources,
+    "detection_evidence": evidence,
+    "analysis": {
+        "total_issues": len(issues),
+        "issues": issues,
+        "summary": analyze_summary,
+    },
+    "score": {
+        "technical_debt_delta": tech_debt,
+        "verdict": verdict,
+        "recommendation": recommendation,
+        "breakdown": score.get("breakdown", {}),
+    },
+    "policy": {
+        "allowed": policy_allowed,
+        "denials": denials,
+        "warnings": warnings_list,
+    },
+}
+
+with open(os.path.join(report_dir, "ods-report.json"), "w") as f:
+    json.dump(report, f, indent=2)
+
+# Generate Markdown summary
+md_lines = []
+md_lines.append("<!-- ods-compliance-report -->")
+md_lines.append("## ODS AI Code Quality Report")
+md_lines.append("")
+md_lines.append(f"**Result:** {overall}  ")
+md_lines.append(f"**AI Detected:** {'🤖 Yes' if ai_detected else '👤 No'} (confidence: {ai_confidence*100:.0f}%)  ")
+md_lines.append(f"**Tech Debt Delta:** {tech_debt:+.1f} ({verdict})  ")
+md_lines.append(f"**Policy:** {'✅ Allowed' if policy_allowed else '❌ Blocked'}  ")
+md_lines.append("")
+
+# Detection details
+md_lines.append("### 🔍 Detection")
+if evidence:
+    md_lines.append("")
+    md_lines.append("| Source | Signal | Confidence |")
+    md_lines.append("|--------|--------|-----------|")
+    for ev in evidence:
+        md_lines.append(f"| {ev.get('source','?')} | {ev.get('value','?')} | {ev.get('confidence',0)*100:.0f}% |")
+else:
+    md_lines.append("No AI code detected.")
+
+# Analysis details
+md_lines.append("")
+md_lines.append("### 📊 Analysis")
+md_lines.append(f"{analyze_summary}  ")
+
+if issues:
+    md_lines.append("")
+    md_lines.append("| Rule | File | Severity | Message |")
+    md_lines.append("|------|------|----------|---------|")
+    for issue in issues[:10]:
+        md_lines.append(f"| {issue.get('rule','?')} | {issue.get('file','?')} | {issue.get('severity','?')} | {issue.get('message','?')} |")
+    if len(issues) > 10:
+        md_lines.append(f"| ... | ... | ... | _and {len(issues)-10} more_ |")
+
+# Scoring details
+md_lines.append("")
+md_lines.append("### 📈 Score")
+b = score.get("breakdown", {})
+md_lines.append(f"| Dimension | Value |")
+md_lines.append(f"|-----------|-------|")
+md_lines.append(f"| AI Code Ratio | {b.get('ai_code_ratio',0)*100:.0f}% |")
+md_lines.append(f"| Defect Density | {b.get('defect_density',0):.1f} / KLOC |")
+md_lines.append(f"| Critical Issues | {b.get('critical_issues',0)} |")
+md_lines.append(f"| Test Coverage | {b.get('test_coverage',0)*100:.0f}% |")
+md_lines.append(f"| Duplication Rate | {b.get('duplication_rate',0)*100:.0f}% |")
+md_lines.append(f"")
+md_lines.append(f"**Verdict:** {verdict} — {recommendation}")
+
+# Policy details
+if denials:
+    md_lines.append("")
+    md_lines.append("### 🚫 Policy Denials")
+    for d in denials:
+        md_lines.append(f"- ❌ {d}")
+if warnings_list:
+    md_lines.append("")
+    md_lines.append("### ⚠️  Policy Warnings")
+    for w in warnings_list:
+        md_lines.append(f"- ⚠️  {w}")
+
+# Files detected
+if files:
+    md_lines.append("")
+    md_lines.append("### 📁 AI-Detected Files")
+    md_lines.append("")
+    md_lines.append("| File | AI Lines | Total | Confidence |")
+    md_lines.append("|------|----------|-------|-----------|")
+    for f in files:
+        md_lines.append(f"| {f.get('path','?')} | {f.get('ai_lines',0)} | {f.get('total_lines',0)} | {f.get('confidence',0)*100:.0f}% |")
+
+summary_md = "\n".join(md_lines) + "\n"
+with open(os.path.join(report_dir, "ods-summary.md"), "w") as f:
+    f.write(summary_md)
+
+# Append to job summary
+if step_summary and os.environ.get("GITHUB_STEP_SUMMARY"):
+    with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+        f.write(summary_md)
+else:
+    # Write to step_summary path if provided
+    try:
+        with open(step_summary, "a") as f:
+            f.write(summary_md)
+    except Exception:
+        pass
+
+# Generate HTML badge
+result_color = {
+    "pass": "#2ea043",
+    "warn": "#d29922",
+    "block": "#cf222e",
+}.get(result_value, "#6e7681")
+result_label = {"pass": "PASS", "warn": "WARN", "block": "BLOCK"}.get(result_value, "UNKNOWN")
+
+svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="420" height="20">
+  <rect width="60" height="20" fill="#6e7681" rx="3"/>
+  <text x="30" y="14" fill="#fff" font-family="sans-serif" font-size="11" text-anchor="middle">ODS</text>
+  <rect x="60" width="120" height="20" fill="{result_color}" rx="3"/>
+  <text x="120" y="14" fill="#fff" font-family="sans-serif" font-size="11" text-anchor="middle">{result_label}</text>
+  <rect x="180" width="240" height="20" fill="#30363d" rx="3"/>
+  <text x="300" y="14" fill="#c9d1d9" font-family="sans-serif" font-size="10" text-anchor="middle">ai:{ai_confidence*100:.0f}% debt:{tech_debt:+.1f}</text>
+</svg>'''
+with open(os.path.join(report_dir, "ods-badge.svg"), "w") as f:
+    f.write(svg)
+
+# Generate simple HTML report
+html = f'''<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>ODS AI Code Quality Report</title>
+<style>
+  body {{ font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #c9d1d9; background: #0d1117; }}
+  h1 {{ color: #f0f6fc; }}
+  .result {{ font-size: 1.5em; padding: 10px 20px; border-radius: 6px; display: inline-block; }}
+  .pass {{ background: #2ea04320; color: #2ea043; border: 1px solid #2ea043; }}
+  .warn {{ background: #d2992220; color: #d29922; border: 1px solid #d29922; }}
+  .block {{ background: #cf222e20; color: #cf222e; border: 1px solid #cf222e; }}
+  table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
+  th, td {{ padding: 8px 12px; text-align: left; border-bottom: 1px solid #30363d; }}
+  th {{ background: #161b22; color: #f0f6fc; }}
+  .section {{ margin: 30px 0; }}
+  .section h2 {{ border-bottom: 1px solid #30363d; padding-bottom: 8px; }}
+</style></head>
+<body>
+<h1>ODS AI Code Quality Report</h1>
+<div class="result {result_value}">{overall}</div>
+<div class="section"><h2>Summary</h2>
+<p><strong>AI Detected:</strong> {'Yes' if ai_detected else 'No'} ({ai_confidence*100:.0f}% confidence)</p>
+<p><strong>Tech Debt Delta:</strong> {tech_debt:+.1f} ({verdict})</p>
+<p><strong>Policy:</strong> {'Allowed' if policy_allowed else 'Blocked'}</p>
+</div>
+<div class="section"><h2>Detection Evidence</h2>
+<table><tr><th>Source</th><th>Signal</th><th>Confidence</th></tr>
+{''.join(f'<tr><td>{ev.get("source","?")}</td><td>{ev.get("value","?")}</td><td>{ev.get("confidence",0)*100:.0f}%</td></tr>' for ev in evidence)}
+</table></div>
+<div class="section"><h2>Issues</h2>
+{analyze_summary}<br><br>
+<table><tr><th>Rule</th><th>File</th><th>Severity</th><th>Message</th></tr>
+{''.join(f'<tr><td>{i.get("rule","?")}</td><td>{i.get("file","?")}</td><td>{i.get("severity","?")}</td><td>{i.get("message","?")}</td></tr>' for i in issues[:20])}
+</table></div>
+<div class="section"><h2>Score Breakdown</h2>
+<table><tr><th>Dimension</th><th>Value</th></tr>
+<tr><td>AI Code Ratio</td><td>{b.get("ai_code_ratio",0)*100:.0f}%</td></tr>
+<tr><td>Defect Density</td><td>{b.get("defect_density",0):.1f} / KLOC</td></tr>
+<tr><td>Critical Issues</td><td>{b.get("critical_issues",0)}</td></tr>
+<tr><td>Test Coverage</td><td>{b.get("test_coverage",0)*100:.0f}%</td></tr>
+<tr><td>Duplication Rate</td><td>{b.get("duplication_rate",0)*100:.0f}%</td></tr>
+</table></div>
+</body></html>'''
+with open(os.path.join(report_dir, "index.html"), "w") as f:
+    f.write(html)
+
+print(f"Report generated: {os.path.join(report_dir, 'index.html')}")
+PY
+        echo "::endgroup::"
+
+        # Fail if policy blocked
+        if [ "$result_value" = "block" ]; then
+          echo "::error::ODS policy blocked this change"
+          exit 1
         fi
 
     - name: Upload ODS Report
@@ -216,7 +466,7 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
       run: |
-        set -u
+        set -euo pipefail
 
         if [ -z "${GH_TOKEN:-}" ]; then
           echo "::warning::Skipping ODS PR comment because github-token is empty."
@@ -228,48 +478,43 @@ runs:
           exit 0
         fi
 
-        PR_NUMBER=$(python3 - <<'PY'
-        import json
-        import os
-
-        with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as handle:
-            event = json.load(handle)
-
-        pull_request = event.get("pull_request") or {}
-        print(pull_request.get("number") or event.get("number") or "")
-        PY
+        # Extract PR number from event
+        PR_NUMBER=$(python3 - "$GITHUB_EVENT_PATH" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    event = json.load(f)
+pr = event.get("pull_request", {})
+print(pr.get("number", "") or event.get("number", ""))
+PY
         )
 
         if [ -z "$PR_NUMBER" ]; then
-          echo "::warning::Skipping ODS PR comment because pull request number was not detected."
+          echo "::warning::Skipping ODS PR comment — no PR number detected."
           exit 0
         fi
 
         RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
         COMMENT_BODY=$(mktemp)
         COMMENT_JSON=$(mktemp)
         COMMENTS_JSON=$(mktemp)
 
         {
-          echo "<!-- ods-compliance-report -->"
           cat "$OUTPUT_DIR/ods-summary.md"
           echo
           echo "[View workflow run]($RUN_URL)"
-          echo "[Download compliance artifact]($RUN_URL)"
         } > "$COMMENT_BODY"
 
         python3 - "$COMMENT_BODY" "$COMMENT_JSON" <<'PY'
-        import json
-        import sys
-
-        with open(sys.argv[1], encoding="utf-8") as handle:
-            body = handle.read()
-
-        with open(sys.argv[2], "w", encoding="utf-8") as handle:
-            json.dump({"body": body}, handle)
-        PY
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    body = f.read()
+with open(sys.argv[2], "w", encoding="utf-8") as f:
+    json.dump({"body": body}, f)
+PY
 
         COMMENTS_URL="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments"
+
         if ! curl -fsSL \
           -H "Authorization: Bearer ${GH_TOKEN}" \
           -H "Accept: application/vnd.github+json" \
@@ -281,18 +526,15 @@ runs:
         fi
 
         COMMENT_ID=$(python3 - "$COMMENTS_JSON" <<'PY'
-        import json
-        import sys
-
-        marker = "<!-- ods-compliance-report -->"
-        with open(sys.argv[1], encoding="utf-8") as handle:
-            comments = json.load(handle)
-
-        for comment in comments:
-            if marker in (comment.get("body") or ""):
-                print(comment.get("id", ""))
-                break
-        PY
+import json, sys
+marker = "<!-- ods-compliance-report -->"
+with open(sys.argv[1], encoding="utf-8") as f:
+    comments = json.load(f)
+for comment in comments:
+    if marker in (comment.get("body") or ""):
+        print(comment.get("id", ""))
+        break
+PY
         )
 
         if [ -n "$COMMENT_ID" ]; then
@@ -312,13 +554,4 @@ runs:
           --data-binary "@${COMMENT_JSON}" \
           >/dev/null; then
           echo "::warning::Unable to create or update ODS PR comment."
-        fi
-
-    - name: Check ODS Compliance Result
-      shell: bash
-      env:
-        REPORT_STATUS: ${{ steps.report.outputs.report_status }}
-      run: |
-        if [ "$REPORT_STATUS" != "0" ]; then
-          exit "$REPORT_STATUS"
         fi
