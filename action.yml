@@ -1,71 +1,40 @@
 name: Open Delivery Spec
-description: Validate delivery artifacts against Open Delivery Spec standards
+description: AI code quality gate — detect AI code, analyze quality, score tech debt, enforce policy
 author: Open Delivery Spec Contributors
 branding:
   icon: check-circle
   color: green
 
 inputs:
-  check:
-    description: 'Type of check to run'
-    required: true
-    default: 'all'
-    # M1 production checks: branch-naming | commit-message | pr-description | all
+  diff-base:
+    description: 'Git ref to diff against (e.g., origin/main, HEAD~3)'
+    required: false
+    default: 'origin/main'
 
-  branch_name:
-    description: 'Branch name to validate (for branch-naming check)'
+  pr-body:
+    description: 'PR description body text (auto-detected from event if omitted)'
     required: false
 
-  commit_message:
-    description: 'Commit message to validate (for commit-message check)'
+  pr-body-file:
+    description: 'Path to file containing PR description body'
     required: false
 
-  pr_body:
-    description: 'PR description body (for pr-description check)'
+  branch:
+    description: 'Branch name (auto-detected from git if omitted)'
     required: false
 
-  pr_number:
-    description: 'Reserved for future AI review and approval checks'
+  commits:
+    description: 'Maximum number of commits to scan for AI markers'
     required: false
+    default: '10'
 
-  review_record:
-    description: 'Reserved for future AI review checks'
+  policy:
+    description: 'Path to OPA Rego policy file'
     required: false
-
-  release_version:
-    description: 'Reserved for future release readiness checks'
-    required: false
-
-  rollback_plan:
-    description: 'Reserved for future rollback plan checks'
-    required: false
-
-  evidence_bundle:
-    description: 'Reserved for future evidence bundle checks'
-    required: false
-
-  strict:
-    description: 'Fail on warnings as well as errors'
-    required: false
-    default: 'false'
-
-  spec_version:
-    description: 'ODS spec version to validate against'
-    required: false
-    default: '1.0.0'
-
-  profile:
-    description: 'ODS compliance profile'
-    required: false
-    default: 'l1'
-
-  report:
-    description: 'Report format to generate'
-    required: false
-    default: 'html'
+    default: '.ods/policy.rego'
 
   summary:
-    description: 'Write ODS report Markdown to the GitHub Actions job summary'
+    description: 'Append Markdown report to the GitHub Actions job summary'
     required: false
     default: 'true'
 
@@ -87,7 +56,7 @@ inputs:
   artifact-name:
     description: 'Workflow artifact name for the generated ODS report'
     required: false
-    default: 'ods-compliance-report'
+    default: 'ods-report'
 
   artifact-retention-days:
     description: 'Number of days to retain the uploaded ODS report artifact'
@@ -106,8 +75,20 @@ inputs:
 
 outputs:
   result:
-    description: 'conformant | conformant-with-warnings | non-conformant'
-    value: ${{ steps.report.outputs.result }}
+    description: 'pass | warn | block'
+    value: ${{ steps.ods.outputs.result }}
+  ai-detected:
+    description: 'Whether AI code was detected'
+    value: ${{ steps.ods.outputs.ai_detected }}
+  ai-confidence:
+    description: 'AI detection confidence (0.0–1.0)'
+    value: ${{ steps.ods.outputs.ai_confidence }}
+  tech-debt-delta:
+    description: 'Technical debt delta score'
+    value: ${{ steps.ods.outputs.tech_debt_delta }}
+  policy-allowed:
+    description: 'Whether the OPA policy allowed the change'
+    value: ${{ steps.ods.outputs.policy_allowed }}
 
 runs:
   using: composite
@@ -115,7 +96,7 @@ runs:
     - name: Setup Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.23'
+        go-version: '1.25'
 
     - name: Install ODS CLI
       shell: bash
@@ -123,82 +104,106 @@ runs:
         CLI_REF: ${{ inputs.cli-ref }}
       run: go install "github.com/open-delivery-spec/cli/cmd/ods@${CLI_REF}"
 
-    - name: Generate ODS Report
-      id: report
+    - name: Run ODS Pipeline
+      id: ods
       shell: bash
       env:
-        CHECK: ${{ inputs.check }}
-        BRANCH_NAME: ${{ inputs.branch_name }}
-        COMMIT_MESSAGE: ${{ inputs.commit_message }}
-        PR_BODY: ${{ inputs.pr_body }}
-        PR_NUMBER: ${{ inputs.pr_number }}
-        STRICT: ${{ inputs.strict }}
-        OUTPUT_DIR: ${{ inputs.output-dir }}
+        ODS_DIFF_BASE: ${{ inputs.diff-base }}
+        ODS_PR_BODY: ${{ inputs.pr-body }}
+        ODS_PR_BODY_FILE: ${{ inputs.pr-body-file }}
+        ODS_BRANCH: ${{ inputs.branch }}
+        ODS_COMMITS: ${{ inputs.commits }}
+        ODS_POLICY: ${{ inputs.policy }}
+        ODS_OUTPUT_DIR: ${{ inputs.output-dir }}
+        GITHUB_HEAD_REF: ${{ github.head_ref }}
+        GITHUB_BASE_REF: ${{ github.base_ref }}
+        GITHUB_WORKSPACE: ${{ github.workspace }}
+        ACTION_DIR: ${{ github.action_path }}
       run: |
-        set -u
+        set -euo pipefail
+        mkdir -p "$ODS_OUTPUT_DIR"
 
-        STRICT_FLAG=""
-        if [ "$STRICT" = "true" ]; then
-          STRICT_FLAG="--strict"
+        # Build detect flags
+        DETECT_FLAGS="--diff-base $ODS_DIFF_BASE --commits $ODS_COMMITS"
+
+        PR_BODY_SOURCE=""
+        if [ -n "${ODS_PR_BODY:-}" ]; then
+          DETECT_FLAGS="$DETECT_FLAGS --pr-body $(printf '%q' "$ODS_PR_BODY")"
+          PR_BODY_SOURCE="flag"
+        elif [ -n "${ODS_PR_BODY_FILE:-}" ] && [ -f "$ODS_PR_BODY_FILE" ]; then
+          DETECT_FLAGS="$DETECT_FLAGS --pr-file $ODS_PR_BODY_FILE"
+          ODS_PR_BODY="$(cat "$ODS_PR_BODY_FILE")"
+          PR_BODY_SOURCE="file"
+        elif [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
+          # Extract PR body from GitHub event using jq
+          PR_BODY=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" 2>/dev/null || echo "")
+          if [ -n "$PR_BODY" ]; then
+            DETECT_FLAGS="$DETECT_FLAGS --pr-body $(printf '%q' "$PR_BODY")"
+            ODS_PR_BODY="$PR_BODY"
+            PR_BODY_SOURCE="event"
+          fi
         fi
 
-        case "$CHECK" in
-          branch-naming|commit-message|pr-description|all)
-            ;;
-          ai-review|ci-failure|release-readiness|approval-workflow|rollback-plan|prod-evidence)
-            echo "Check '$CHECK' is experimental and is not enforced by validate-action yet."
-            echo "Use the ODS CLI validate subcommands directly for draft module schema checks."
-            echo "result=non-conformant" >> "$GITHUB_OUTPUT"
-            exit 1
-            ;;
-          *)
-            echo "Unknown check: $CHECK"
-            echo "result=non-conformant" >> "$GITHUB_OUTPUT"
-            exit 1
-            ;;
-        esac
+        BRANCH="${ODS_BRANCH:-}"
+        if [ -z "$BRANCH" ]; then
+          BRANCH="${GITHUB_HEAD_REF:-}"
+        fi
+        if [ -z "$BRANCH" ]; then
+          BRANCH=$(git branch --show-current 2>/dev/null || echo "")
+        fi
+        if [ -n "$BRANCH" ]; then
+          DETECT_FLAGS="$DETECT_FLAGS --branch $BRANCH"
+        fi
 
-        export ODS_REPORT_CHECK="$CHECK"
-        export ODS_BRANCH_NAME="$BRANCH_NAME"
-        export ODS_COMMIT_MESSAGE="$COMMIT_MESSAGE"
-        export ODS_PR_BODY="$PR_BODY"
-        export ODS_PR_NUMBER="$PR_NUMBER"
-
+        echo "::group::① Detect — AI Code Detection"
+        DETECT_JSON="$ODS_OUTPUT_DIR/detect.json"
         set +e
-        ods report --output "$OUTPUT_DIR" $STRICT_FLAG
-        REPORT_STATUS=$?
+        ods detect --json $DETECT_FLAGS > "$DETECT_JSON" 2>"$ODS_OUTPUT_DIR/detect.stderr"
+        DETECT_EXIT=$?
         set -e
+        echo "::endgroup::"
 
-        if [ -f "$OUTPUT_DIR/ods-compliance.json" ]; then
-          RESULT=$(python3 - "$OUTPUT_DIR/ods-compliance.json" <<'PY'
-        import json
-        import sys
+        echo "::group::② Analyze — AI Code Quality"
+        ANALYZE_JSON="$ODS_OUTPUT_DIR/analyze.json"
+        set +e
+        ods analyze --json 2>/dev/null > "$ANALYZE_JSON" || \
+          echo '{"issues":[],"total_lines":0,"summary":"No code analyzed"}' > "$ANALYZE_JSON"
+        set -e
+        echo "::endgroup::"
 
-        with open(sys.argv[1], encoding="utf-8") as handle:
-            status = json.load(handle).get("status", "non_compliant")
+        echo "::group::③ Score — Technical Debt Impact"
+        SCORE_JSON="$ODS_OUTPUT_DIR/score.json"
+        set +e
+        ods score --json 2>/dev/null > "$SCORE_JSON" || \
+          echo '{"technical_debt_delta":0,"verdict":"neutral"}' > "$SCORE_JSON"
+        set -e
+        echo "::endgroup::"
 
-        print({
-            "compliant": "conformant",
-            "compliant_with_warnings": "conformant-with-warnings",
-            "non_compliant": "non-conformant",
-        }.get(status, "non-conformant"))
-        PY
-        )
+        echo "::group::④ Check — Policy Enforcement"
+        CHECK_JSON="$ODS_OUTPUT_DIR/check.json"
+        CHECK_EXIT=0
+        set +e
+        if [ -n "${ODS_POLICY:-}" ] && [ -f "$ODS_POLICY" ]; then
+          ods check --json --policy "$ODS_POLICY" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
         else
-          RESULT="non-conformant"
+          ods check --json > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
         fi
+        set -e
+        echo "::endgroup::"
 
-        echo "result=$RESULT" >> "$GITHUB_OUTPUT"
-        echo "report_status=$REPORT_STATUS" >> "$GITHUB_OUTPUT"
+        # Generate report using external script
+        echo "::group::Generate Report"
+        REPORT_SCRIPT="${ACTION_DIR}/scripts/generate-report.py"
+        python3 "$REPORT_SCRIPT" "$ODS_OUTPUT_DIR" "$GITHUB_OUTPUT"
+        echo "::endgroup::"
 
-    - name: Add ODS Job Summary
-      if: inputs.summary == 'true'
-      shell: bash
-      env:
-        OUTPUT_DIR: ${{ inputs.output-dir }}
-      run: |
-        if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f "$OUTPUT_DIR/ods-summary.md" ]; then
-          cat "$OUTPUT_DIR/ods-summary.md" >> "$GITHUB_STEP_SUMMARY"
+        # Read result from the script output
+        RESULT_VALUE=$(cat "$ODS_OUTPUT_DIR/.result" 2>/dev/null || echo "pass")
+
+        # Fail if policy blocked
+        if [ "$RESULT_VALUE" = "block" ]; then
+          echo "::error::ODS policy blocked this change"
+          exit 1
         fi
 
     - name: Upload ODS Report
@@ -215,8 +220,13 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
+        GITHUB_EVENT_PATH: ${{ github.event_path }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+        GITHUB_API_URL: ${{ github.api_url }}
       run: |
-        set -u
+        set -euo pipefail
 
         if [ -z "${GH_TOKEN:-}" ]; then
           echo "::warning::Skipping ODS PR comment because github-token is empty."
@@ -228,74 +238,38 @@ runs:
           exit 0
         fi
 
-        PR_NUMBER=$(python3 - <<'PY'
-        import json
-        import os
+        # Extract PR number using jq
+        PR_NUMBER=$(jq -r '.pull_request.number // .number // ""' "$GITHUB_EVENT_PATH" 2>/dev/null)
 
-        with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as handle:
-            event = json.load(handle)
-
-        pull_request = event.get("pull_request") or {}
-        print(pull_request.get("number") or event.get("number") or "")
-        PY
-        )
-
-        if [ -z "$PR_NUMBER" ]; then
-          echo "::warning::Skipping ODS PR comment because pull request number was not detected."
+        if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
+          echo "::warning::Skipping ODS PR comment — no PR number detected."
           exit 0
         fi
 
         RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-        COMMENT_BODY=$(mktemp)
-        COMMENT_JSON=$(mktemp)
-        COMMENTS_JSON=$(mktemp)
 
+        # Build comment body
         {
-          echo "<!-- ods-compliance-report -->"
           cat "$OUTPUT_DIR/ods-summary.md"
           echo
           echo "[View workflow run]($RUN_URL)"
-          echo "[Download compliance artifact]($RUN_URL)"
-        } > "$COMMENT_BODY"
+        } > /tmp/ods-comment-body.md
 
-        python3 - "$COMMENT_BODY" "$COMMENT_JSON" <<'PY'
-        import json
-        import sys
+        # Build comment JSON with jq
+        jq -n --rawfile body /tmp/ods-comment-body.md '{body: $body}' > /tmp/ods-comment.json
 
-        with open(sys.argv[1], encoding="utf-8") as handle:
-            body = handle.read()
-
-        with open(sys.argv[2], "w", encoding="utf-8") as handle:
-            json.dump({"body": body}, handle)
-        PY
-
+        # Find existing ODS comment
         COMMENTS_URL="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments"
-        if ! curl -fsSL \
+        curl -fsSL \
           -H "Authorization: Bearer ${GH_TOKEN}" \
           -H "Accept: application/vnd.github+json" \
           -H "X-GitHub-Api-Version: 2022-11-28" \
           "${COMMENTS_URL}?per_page=100" \
-          -o "$COMMENTS_JSON"; then
-          echo "::warning::Unable to list PR comments for ODS report."
-          exit 0
-        fi
+          -o /tmp/ods-comments.json 2>/dev/null || true
 
-        COMMENT_ID=$(python3 - "$COMMENTS_JSON" <<'PY'
-        import json
-        import sys
+        COMMENT_ID=$(jq -r '.[] | select(.body | contains("<!-- ods-compliance-report -->")) | .id // ""' /tmp/ods-comments.json 2>/dev/null || echo "")
 
-        marker = "<!-- ods-compliance-report -->"
-        with open(sys.argv[1], encoding="utf-8") as handle:
-            comments = json.load(handle)
-
-        for comment in comments:
-            if marker in (comment.get("body") or ""):
-                print(comment.get("id", ""))
-                break
-        PY
-        )
-
-        if [ -n "$COMMENT_ID" ]; then
+        if [ -n "$COMMENT_ID" ] && [ "$COMMENT_ID" != "null" ]; then
           METHOD="PATCH"
           URL="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}"
         else
@@ -303,22 +277,11 @@ runs:
           URL="$COMMENTS_URL"
         fi
 
-        if ! curl -fsSL \
+        curl -fsSL \
           -X "$METHOD" \
           -H "Authorization: Bearer ${GH_TOKEN}" \
           -H "Accept: application/vnd.github+json" \
           -H "X-GitHub-Api-Version: 2022-11-28" \
           "$URL" \
-          --data-binary "@${COMMENT_JSON}" \
-          >/dev/null; then
-          echo "::warning::Unable to create or update ODS PR comment."
-        fi
-
-    - name: Check ODS Compliance Result
-      shell: bash
-      env:
-        REPORT_STATUS: ${{ steps.report.outputs.report_status }}
-      run: |
-        if [ "$REPORT_STATUS" != "0" ]; then
-          exit "$REPORT_STATUS"
-        fi
+          --data-binary "@/tmp/ods-comment.json" \
+          >/dev/null 2>/dev/null || echo "::warning::Unable to create or update ODS PR comment."
