@@ -15,39 +15,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Move major tags to latest release
+      - name: Move v1 tag to latest release
         run: |
           TAG_VERSION="${{ github.event.release.tag_name }}"
           echo "Release tag: $TAG_VERSION"
 
-          # Extract major version (e.g., v0.1.2 → v0, v2.0.0 → v2)
-          MAJOR=$(echo "$TAG_VERSION" | sed -n 's/^v\([0-9]*\).*$/v\1/p')
-
-          if [ -z "$MAJOR" ]; then
-            echo "Release tag '$TAG_VERSION' does not match vMAJOR[.MINOR.PATCH] pattern"
+          # v1 is the only major tag. Any v0.x.x or v1.x.x release updates it.
+          # Users reference validate-action@v1 to always get the latest.
+          if ! echo "$TAG_VERSION" | grep -qE '^v[01]\.'; then
+            echo "Skipping: only v0.x.x and v1.x.x releases update the v1 tag"
             exit 0
           fi
 
-          # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Move the matching major tag
-          echo "Moving $MAJOR tag to $TAG_VERSION (${{ github.sha }})"
-          git tag -d "$MAJOR" 2>/dev/null || true
-          git push origin --delete "$MAJOR" 2>/dev/null || true
-          git tag "$MAJOR" "${{ github.sha }}"
-          git push origin "$MAJOR"
-          echo "✅ $MAJOR tag updated to point to $TAG_VERSION"
-
-          # Also update the recommended v2 tag if this is a v0.x release.
-          # Users reference validate-action@v2 in their workflows, so v2
-          # should always point to the latest rewritten action.
-          if [ "$MAJOR" = "v0" ]; then
-            echo "Also moving v2 tag to $TAG_VERSION"
-            git tag -d "v2" 2>/dev/null || true
-            git push origin --delete "v2" 2>/dev/null || true
-            git tag "v2" "${{ github.sha }}"
-            git push origin "v2"
-            echo "✅ v2 tag also updated to point to $TAG_VERSION"
-          fi
+          echo "Moving v1 tag to $TAG_VERSION (${{ github.sha }})"
+          git tag -d v1 2>/dev/null || true
+          git push origin --delete v1 2>/dev/null || true
+          git tag v1 "${{ github.sha }}"
+          git push origin v1
+          echo "✅ v1 tag updated to point to $TAG_VERSION"
