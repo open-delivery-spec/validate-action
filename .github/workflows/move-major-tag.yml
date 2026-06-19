@@ -31,8 +31,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           echo "Moving v1 tag to $TAG_VERSION (${{ github.sha }})"
-          git tag -d v1 2>/dev/null || true
-          git push origin --delete v1 2>/dev/null || true
-          git tag v1 "${{ github.sha }}"
-          git push origin v1
+          git tag -f v1 "${{ github.sha }}"
+          git push origin v1 --force
           echo "✅ v1 tag updated to point to $TAG_VERSION"
