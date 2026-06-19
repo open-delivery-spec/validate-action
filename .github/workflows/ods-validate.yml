@@ -47,7 +47,7 @@ jobs:
           fi
 
       - name: ODS AI code quality gate
-        uses: open-delivery-spec/validate-action@v1
+        uses: open-delivery-spec/validate-action@v2
         with:
           diff-base: ${{ github.event.pull_request.base.sha || 'origin/main' }}
           branch: ${{ github.head_ref }}
