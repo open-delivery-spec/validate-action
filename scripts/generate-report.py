@@ -163,14 +163,14 @@ def build_markdown(**kw):
         "## ODS AI Code Quality Report",
         "",
         f"**Result:** {kw['overall']}  ",
-        f"**AI Detected:** {'\\U0001f916 Yes' if kw['ai_detected'] else '\\U0001f464 No'} (confidence: {kw['ai_confidence']*100:.0f}%)  ",
+        f"**AI Detected:** {'\U0001f916 Yes' if kw['ai_detected'] else '\U0001f464 No'} (confidence: {kw['ai_confidence']*100:.0f}%)  ",
         f"**Tech Debt Delta:** {kw['tech_debt']:+.1f} ({kw['verdict']})  ",
-        f"**Policy:** {'\\u2705 Allowed' if kw['policy_allowed'] else '\\u274c Blocked'}  ",
+        f"**Policy:** {'\u2705 Allowed' if kw['policy_allowed'] else '\u274c Blocked'}  ",
         "",
     ]
 
     # Detection
-    lines.append("### \\U0001f50d Detection")
+    lines.append("### \U0001f50d Detection")
     ev = kw["evidence"]
     if ev:
         lines.extend(["", "| Source | Signal | Confidence |", "|--------|--------|-----------|"])
@@ -180,7 +180,7 @@ def build_markdown(**kw):
         lines.append("No AI code detected.")
 
     # Analysis
-    lines.extend(["", "### \\U0001f4ca Analysis", f"{kw['analyze_summary']}  "])
+    lines.extend(["", "### \U0001f4ca Analysis", f"{kw['analyze_summary']}  "])
     issues = kw["issues"]
     if issues:
         lines.extend(["", "| Rule | File | Severity | Message |", "|------|------|----------|---------|"])
@@ -190,7 +190,7 @@ def build_markdown(**kw):
             lines.append(f"| ... | ... | ... | _and {len(issues)-10} more_ |")
 
     # Score
-    lines.extend(["", "### \\U0001f4c8 Score"])
+    lines.extend(["", "### \U0001f4c8 Score"])
     b = kw["score"].get("breakdown", {})
     lines.extend([
         "| Dimension | Value |",
@@ -206,18 +206,18 @@ def build_markdown(**kw):
 
     # Policy
     if kw["denials"]:
-        lines.extend(["", "### \\U0001f6ab Policy Denials"])
+        lines.extend(["", "### \U0001f6ab Policy Denials"])
         for d in kw["denials"]:
-            lines.append(f"- \\u274c {d}")
+            lines.append(f"- \u274c {d}")
     if kw["warnings_list"]:
-        lines.extend(["", "### \\u26a0\\ufe0f  Policy Warnings"])
+        lines.extend(["", "### \u26a0\ufe0f  Policy Warnings"])
         for w in kw["warnings_list"]:
-            lines.append(f"- \\u26a0\\ufe0f  {w}")
+            lines.append(f"- \u26a0\ufe0f  {w}")
 
     # Files
     files = kw["files"]
     if files:
-        lines.extend(["", "### \\U0001f4c1 AI-Detected Files", ""])
+        lines.extend(["", "### \U0001f4c1 AI-Detected Files", ""])
         lines.extend([
             "| File | AI Lines | Total | Confidence |",
             "|------|----------|-------|-----------|",
