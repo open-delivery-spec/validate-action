@@ -35,10 +35,10 @@ jobs:
   ods:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # required for git diff against base
-      - uses: open-delivery-spec/validate-action@v2
+      - uses: open-delivery-spec/validate-action@v1
 ```
 
 That's it. The Action automatically:
@@ -113,6 +113,7 @@ That's it. The Action automatically:
 | `pr-body-file` | No | — | Path to file containing PR body |
 | `branch` | No | auto-detected | Branch name |
 | `commits` | No | `10` | Max commits to scan for AI markers |
+> **Note:** `diff-base` currently only affects the `detect` step. The `analyze`, `score`, and `check` steps always use `HEAD~1`. This will be unified in a future release.
 | `policy` | No | `.ods/policy.rego` | Path to OPA Rego policy file |
 | `summary` | No | `true` | Append report to job summary |
 | `comment` | No | `true` | Post/update PR comment |
@@ -196,7 +197,7 @@ Available policy input fields:
 | `input.technical_debt_delta` | float | Technical debt impact score |
 | `input.test_coverage` | float | Test coverage ratio (0.0–1.0) |
 | `input.branch` | string | Branch name |
-| `input.changed_files` | array | Changed file paths |
+| `input.changed_files` | array | Changed file paths _(not yet populated — planned)_ |
 
 ---
 
@@ -205,7 +206,7 @@ Available policy input fields:
 Turn off specific display surfaces when you only want validation:
 
 ```yaml
-- uses: open-delivery-spec/validate-action@v2
+- uses: open-delivery-spec/validate-action@v1
   with:
     summary: "false"
     comment: "false"
@@ -219,7 +220,7 @@ Turn off specific display surfaces when you only want validation:
 If your workflow doesn't have access to `github.event.pull_request.body`:
 
 ```yaml
-- uses: open-delivery-spec/validate-action@v2
+- uses: open-delivery-spec/validate-action@v1
   with:
     pr-body: |
       ## AI Disclosure

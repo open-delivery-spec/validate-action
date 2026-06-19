@@ -123,11 +123,12 @@ def main():
     with open(summary_path, "w") as f:
         f.write(md)
 
-    # Append to GitHub step summary
-    step_summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
-    if step_summary:
-        with open(step_summary, "a") as f:
-            f.write(md)
+    # Append to GitHub step summary (respect INPUT_SUMMARY env var)
+    if os.environ.get("INPUT_SUMMARY", "true").lower() == "true":
+        step_summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
+        if step_summary:
+            with open(step_summary, "a") as f:
+                f.write(md)
 
     # SVG badge
     svg = build_svg(result_value, ai_confidence, tech_debt)

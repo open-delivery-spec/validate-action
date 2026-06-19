@@ -115,6 +115,7 @@ runs:
         ODS_COMMITS: ${{ inputs.commits }}
         ODS_POLICY: ${{ inputs.policy }}
         ODS_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_SUMMARY: ${{ inputs.summary }}
         GITHUB_HEAD_REF: ${{ github.head_ref }}
         GITHUB_BASE_REF: ${{ github.base_ref }}
         GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -125,6 +126,8 @@ runs:
 
         # Build detect flags
         DETECT_FLAGS="--diff-base $ODS_DIFF_BASE --commits $ODS_COMMITS"
+        # Export diff-base for CLI commands that do not yet accept --diff-base
+        export ODS_DIFF_BASE="$ODS_DIFF_BASE"
 
         PR_BODY_SOURCE=""
         if [ -n "${ODS_PR_BODY:-}" ]; then
@@ -153,6 +156,9 @@ runs:
         fi
         if [ -n "$BRANCH" ]; then
           DETECT_FLAGS="$DETECT_FLAGS --branch $BRANCH"
+          # Export both env var names for CLI compatibility
+          export ODS_BRANCH="$BRANCH"
+          export ODS_BRANCH_NAME="$BRANCH"
         fi
 
         echo "::group::① Detect — AI Code Detection"
@@ -194,6 +200,7 @@ runs:
         # Generate report using external script
         echo "::group::Generate Report"
         REPORT_SCRIPT="${ACTION_DIR}/scripts/generate-report.py"
+        # INPUT_SUMMARY env var tells the script whether to write to job summary
         python3 "$REPORT_SCRIPT" "$ODS_OUTPUT_DIR" "$GITHUB_OUTPUT"
         echo "::endgroup::"
 
