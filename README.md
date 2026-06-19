@@ -1,5 +1,6 @@
 # ODS Validate Action
 
+[![ODS Validate](https://github.com/open-delivery-spec/validate-action/actions/workflows/ods-validate.yml/badge.svg)](https://github.com/open-delivery-spec/validate-action/actions/workflows/ods-validate.yml)
 [![CI](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml/badge.svg)](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml)
 
 > **AI code quality gate for CI.** Detect AI-generated code, analyze quality defects, score technical debt impact, and enforce enterprise policy — on every pull request.

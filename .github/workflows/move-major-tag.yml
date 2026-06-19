@@ -20,26 +20,19 @@ jobs:
           TAG_VERSION="${{ github.event.release.tag_name }}"
           echo "Release tag: $TAG_VERSION"
 
-          # Extract major version (e.g., v0.1.2 → v0, v1.2.3 → v1)
-          MAJOR=$(echo "$TAG_VERSION" | sed -n 's/^v\([0-9]*\).*$/v\1/p')
-
-          if [ -z "$MAJOR" ]; then
-            echo "Release tag '$TAG_VERSION' does not match vMAJOR[.MINOR.PATCH] pattern"
+          # v1 is the only major tag. Any v0.x.x or v1.x.x release updates it.
+          # Users reference validate-action@v1 to always get the latest.
+          if ! echo "$TAG_VERSION" | grep -qE '^v[01]\.'; then
+            echo "Skipping: only v0.x.x and v1.x.x releases update the v1 tag"
             exit 0
           fi
 
-          echo "Moving $MAJOR tag to $TAG_VERSION (${{ github.sha }})"
-
-          # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Delete the major tag locally and remotely (if it exists)
-          git tag -d "$MAJOR" 2>/dev/null || true
-          git push origin --delete "$MAJOR" 2>/dev/null || true
-
-          # Create and push the major tag
-          git tag "$MAJOR" "${{ github.sha }}"
-          git push origin "$MAJOR"
-
-          echo "✅ $MAJOR tag updated to point to $TAG_VERSION"
+          echo "Moving v1 tag to $TAG_VERSION (${{ github.sha }})"
+          git tag -d v1 2>/dev/null || true
+          git push origin --delete v1 2>/dev/null || true
+          git tag v1 "${{ github.sha }}"
+          git push origin v1
+          echo "✅ v1 tag updated to point to $TAG_VERSION"
