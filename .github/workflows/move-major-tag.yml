@@ -1,0 +1,45 @@
+name: Move Major Tag
+
+on:
+  release:
+    types: [published, edited]
+
+permissions:
+  contents: write
+
+jobs:
+  move-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Move v1 tag to latest release
+        run: |
+          TAG_VERSION="${{ github.event.release.tag_name }}"
+          echo "Release tag: $TAG_VERSION"
+
+          # Extract major version (e.g., v0.1.2 → v0, v1.2.3 → v1)
+          MAJOR=$(echo "$TAG_VERSION" | sed -n 's/^v\([0-9]*\).*$/v\1/p')
+
+          if [ -z "$MAJOR" ]; then
+            echo "Release tag '$TAG_VERSION' does not match vMAJOR[.MINOR.PATCH] pattern"
+            exit 0
+          fi
+
+          echo "Moving $MAJOR tag to $TAG_VERSION (${{ github.sha }})"
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Delete the major tag locally and remotely (if it exists)
+          git tag -d "$MAJOR" 2>/dev/null || true
+          git push origin --delete "$MAJOR" 2>/dev/null || true
+
+          # Create and push the major tag
+          git tag "$MAJOR" "${{ github.sha }}"
+          git push origin "$MAJOR"
+
+          echo "✅ $MAJOR tag updated to point to $TAG_VERSION"
