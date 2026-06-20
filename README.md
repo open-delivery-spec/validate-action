@@ -3,7 +3,7 @@
 [![ODS Validate](https://github.com/open-delivery-spec/validate-action/actions/workflows/ods-validate.yml/badge.svg)](https://github.com/open-delivery-spec/validate-action/actions/workflows/ods-validate.yml)
 [![CI](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml/badge.svg)](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml)
 
-> **AI code quality gate for CI.** Detect AI-generated code, analyze quality defects, score technical debt impact, and enforce enterprise policy — on every pull request.
+> **AI code quality gate for CI.** Detect AI-generated code, analyze quality, score technical debt, and enforce enterprise policy — on every pull request.
 
 ---
 
@@ -103,7 +103,7 @@ ODS also reads supplemental ODS-specific trailer fields (`AI-assisted: true`, `A
 >
 > ### 🔍 Detection
 > | Source | Signal | Confidence |
-> |--------|--------|---|
+> |--------|--------|-----------|
 > | pr-body | AI disclosure checkbox is checked | 85% |
 >
 > ### 📊 Analysis
@@ -129,7 +129,6 @@ ODS also reads supplemental ODS-specific trailer fields (`AI-assisted: true`, `A
 | `pr-body-file` | No | — | Path to file containing PR body |
 | `branch` | No | auto-detected | Branch name |
 | `commits` | No | `10` | Max commits to scan for AI markers |
-> **Note:** `diff-base` currently only affects the `detect` step. The `analyze`, `score`, and `check` steps always use `HEAD~1`. This will be unified in a future release.
 | `policy` | No | `.ods/policy.rego` | Path to OPA Rego policy file |
 | `summary` | No | `true` | Append report to job summary |
 | `comment` | No | `true` | Post/update PR comment |
