@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # required for git diff against base
-      - uses: open-delivery-spec/validate-action@v2
+      - uses: open-delivery-spec/validate-action@v1
 ```
 
 That's it. The Action automatically:
@@ -222,7 +222,7 @@ Available policy input fields:
 Turn off specific display surfaces when you only want validation:
 
 ```yaml
-- uses: open-delivery-spec/validate-action@v2
+- uses: open-delivery-spec/validate-action@v1
   with:
     summary: "false"
     comment: "false"
@@ -236,7 +236,7 @@ Turn off specific display surfaces when you only want validation:
 If your workflow doesn't have access to `github.event.pull_request.body`:
 
 ```yaml
-- uses: open-delivery-spec/validate-action@v2
+- uses: open-delivery-spec/validate-action@v1
   with:
     pr-body: |
       ## AI Disclosure
