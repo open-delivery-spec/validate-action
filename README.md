@@ -43,10 +43,26 @@ jobs:
 
 That's it. The Action automatically:
 
-1. **Detects** AI-generated code (commit trailers, PR disclosure, branch names, diff heuristics)
+1. **Detects** AI-generated code (`Co-Authored-By` trailers, PR disclosure, branch names, diff heuristics)
 2. **Analyzes** code quality (5 rule categories for AI-specific defects)
 3. **Scores** technical debt impact (5-dimension weighted model)
 4. **Enforces** policy (OPA Rego — optional, place at `.ods/policy.rego`)
+
+---
+
+## AI Detection: `Co-Authored-By` as the Primary Signal
+
+ODS reads `Co-Authored-By` trailers that AI tools already emit automatically:
+
+| Tool | Emitted automatically | What ODS reads |
+|------|-----------------------|----------------|
+| **Claude / Claude Code** | Yes | `Co-Authored-By: Claude <noreply@anthropic.com>` |
+| **GitHub Copilot** | Yes | `Co-Authored-By: GitHub Copilot <...@users.noreply.github.com>` |
+| **Cursor** | Yes | `Co-Authored-By: Cursor <cursor@cursor.sh>` |
+
+No configuration required — if your team uses any of these tools, AI attribution is detected automatically from the commits.
+
+ODS also reads supplemental ODS-specific trailer fields (`AI-assisted: true`, `AI-tool: name`) for teams that add them, but `Co-Authored-By` is sufficient on its own.
 
 ---
 
@@ -87,7 +103,7 @@ That's it. The Action automatically:
 >
 > ### 🔍 Detection
 > | Source | Signal | Confidence |
-> |--------|--------|-----------|
+> |--------|--------|---|
 > | pr-body | AI disclosure checkbox is checked | 85% |
 >
 > ### 📊 Analysis
@@ -227,6 +243,12 @@ If your workflow doesn't have access to `github.event.pull_request.body`:
       - [x] This PR contains AI-generated code
       - AI Tool: GitHub Copilot
 ```
+
+---
+
+## In Production
+
+This Action runs on every PR in the `open-delivery-spec` org (dogfooding) and is pending adoption in external repositories. See [ADOPTERS.md](https://github.com/open-delivery-spec/spec/blob/main/ADOPTERS.md) for the current list.
 
 ---
 
