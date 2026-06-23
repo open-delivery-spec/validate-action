@@ -54,6 +54,28 @@ That’s it. The Action automatically:
 
 ---
 
+## Versioning & Stability
+
+Pin the Action to a major tag so you receive fixes without breaking changes:
+
+```yaml
+- uses: open-delivery-spec/validate-action@v1   # recommended: tracks the v1 line
+# - uses: open-delivery-spec/validate-action@v1.0.0   # exact release, fully reproducible
+```
+
+> **Note on the CLI it installs.** By default the Action installs the ODS CLI
+> from the `main` branch (`cli-ref: main`) so you always get the latest
+> detection and analysis improvements. For fully reproducible builds — e.g.
+> regulated or air-gapped pipelines — pin the CLI to a tag or commit:
+>
+> ```yaml
+> - uses: open-delivery-spec/validate-action@v1
+>   with:
+>     cli-ref: v0.2.3   # or a commit SHA
+> ```
+
+---
+
 ## AI Detection: `Co-Authored-By` as the Primary Signal
 
 ODS reads `Co-Authored-By` trailers that AI tools already emit automatically:
@@ -217,7 +239,7 @@ Available policy input fields:
 | `input.technical_debt_delta` | float | Technical debt impact score |
 | `input.test_coverage` | float | Test coverage ratio (0.0–1.0) |
 | `input.branch` | string | Branch name |
-| `input.changed_files` | array | Changed file paths _(not yet populated — planned)_ |
+| `input.changed_files` | array | Changed file paths in the diff |
 
 ---
 
