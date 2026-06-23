@@ -9,6 +9,7 @@ Appends Markdown to $GITHUB_STEP_SUMMARY if set.
 Writes step outputs to github-output-file.
 """
 
+import html
 import json
 import os
 import sys
@@ -21,6 +22,21 @@ def load_json(path):
             return json.load(f)
     except Exception:
         return {}
+
+
+def md_cell(value):
+    """Sanitize a value for safe rendering inside a Markdown table cell.
+
+    Escapes pipes (which would break the column layout) and collapses
+    newlines, so arbitrary PR/branch/issue text can never corrupt the table.
+    """
+    text = str(value)
+    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+
+
+def h(value):
+    """HTML-escape a value (including quotes) for safe interpolation."""
+    return html.escape(str(value), quote=True)
 
 
 def main():
@@ -159,14 +175,18 @@ def main():
 
 
 def build_markdown(**kw):
+    # NOTE: keep backslash escapes out of f-string expression braces \u2014 that
+    # syntax requires Python 3.12+, but CI runners may ship an older python3.
+    ai_label = "\U0001f916 Yes" if kw["ai_detected"] else "\U0001f464 No"
+    policy_label = "\u2705 Allowed" if kw["policy_allowed"] else "\u274c Blocked"
     lines = [
         "<!-- ods-compliance-report -->",
         "## ODS AI Code Quality Report",
         "",
         f"**Result:** {kw['overall']}  ",
-        f"**AI Detected:** {'\U0001f916 Yes' if kw['ai_detected'] else '\U0001f464 No'} (confidence: {kw['ai_confidence']*100:.0f}%)  ",
+        f"**AI Detected:** {ai_label} (confidence: {kw['ai_confidence']*100:.0f}%)  ",
         f"**Tech Debt Delta:** {kw['tech_debt']:+.1f} ({kw['verdict']})  ",
-        f"**Policy:** {'\u2705 Allowed' if kw['policy_allowed'] else '\u274c Blocked'}  ",
+        f"**Policy:** {policy_label}  ",
         "",
     ]
 
@@ -176,7 +196,7 @@ def build_markdown(**kw):
     if ev:
         lines.extend(["", "| Source | Signal | Confidence |", "|--------|--------|-----------|"])
         for e in ev:
-            lines.append(f"| {e.get('source','?')} | {e.get('value','?')} | {e.get('confidence',0)*100:.0f}% |")
+            lines.append(f"| {md_cell(e.get('source','?'))} | {md_cell(e.get('value','?'))} | {e.get('confidence',0)*100:.0f}% |")
     else:
         lines.append("No AI code detected.")
 
@@ -186,7 +206,7 @@ def build_markdown(**kw):
     if issues:
         lines.extend(["", "| Rule | File | Severity | Message |", "|------|------|----------|---------|"])
         for i in issues[:10]:
-            lines.append(f"| {i.get('rule','?')} | {i.get('file','?')} | {i.get('severity','?')} | {i.get('message','?')} |")
+            lines.append(f"| {md_cell(i.get('rule','?'))} | {md_cell(i.get('file','?'))} | {md_cell(i.get('severity','?'))} | {md_cell(i.get('message','?'))} |")
         if len(issues) > 10:
             lines.append(f"| ... | ... | ... | _and {len(issues)-10} more_ |")
 
@@ -224,7 +244,7 @@ def build_markdown(**kw):
             "|------|----------|-------|-----------|",
         ])
         for f in files:
-            lines.append(f"| {f.get('path','?')} | {f.get('ai_lines',0)} | {f.get('total_lines',0)} | {f.get('confidence',0)*100:.0f}% |")
+            lines.append(f"| {md_cell(f.get('path','?'))} | {f.get('ai_lines',0)} | {f.get('total_lines',0)} | {f.get('confidence',0)*100:.0f}% |")
 
     return "\n".join(lines) + "\n"
 
@@ -235,71 +255,152 @@ def build_svg(result_value, ai_confidence, tech_debt):
     color = colors.get(result_value, "#6e7681")
     label = labels.get(result_value, "UNKNOWN")
 
+    # Flat shields.io-style badge: [ ODS ][ STATUS ][ ai:NN% · debt:±N.N ]
+    meta = f"ai {ai_confidence*100:.0f}% · debt {tech_debt:+.1f}"
+    label_w, status_w, meta_w = 44, 70, 150
+    total = label_w + status_w + meta_w
+
     return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="420" height="20">\n'
-        f'  <rect width="60" height="20" fill="#6e7681" rx="3"/>\n'
-        f'  <text x="30" y="14" fill="#fff" font-family="sans-serif" font-size="11" text-anchor="middle">ODS</text>\n'
-        f'  <rect x="60" width="120" height="20" fill="{color}" rx="3"/>\n'
-        f'  <text x="120" y="14" fill="#fff" font-family="sans-serif" font-size="11" text-anchor="middle">{label}</text>\n'
-        f'  <rect x="180" width="240" height="20" fill="#30363d" rx="3"/>\n'
-        f'  <text x="300" y="14" fill="#c9d1d9" font-family="sans-serif" font-size="10" text-anchor="middle">'
-        f'ai:{ai_confidence*100:.0f}% debt:{tech_debt:+.1f}</text>\n'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{total}" height="20" '
+        f'role="img" aria-label="ODS: {label} ({h(meta)})">\n'
+        f'  <linearGradient id="s" x2="0" y2="100%">\n'
+        f'    <stop offset="0" stop-color="#fff" stop-opacity=".1"/>\n'
+        f'    <stop offset="1" stop-opacity=".1"/>\n'
+        f'  </linearGradient>\n'
+        f'  <clipPath id="r"><rect width="{total}" height="20" rx="3" fill="#fff"/></clipPath>\n'
+        f'  <g clip-path="url(#r)">\n'
+        f'    <rect width="{label_w}" height="20" fill="#24292f"/>\n'
+        f'    <rect x="{label_w}" width="{status_w}" height="20" fill="{color}"/>\n'
+        f'    <rect x="{label_w+status_w}" width="{meta_w}" height="20" fill="#30363d"/>\n'
+        f'    <rect width="{total}" height="20" fill="url(#s)"/>\n'
+        f'  </g>\n'
+        f'  <g fill="#fff" text-anchor="middle" '
+        f'font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="11">\n'
+        f'    <text x="{label_w/2:.0f}" y="14" font-weight="bold">ODS</text>\n'
+        f'    <text x="{label_w+status_w/2:.0f}" y="14" font-weight="bold">{label}</text>\n'
+        f'    <text x="{label_w+status_w+meta_w/2:.0f}" y="14" fill="#c9d1d9">{h(meta)}</text>\n'
+        f'  </g>\n'
         f'</svg>'
     )
 
 
 def build_html(**kw):
+    sev_badge = (
+        lambda s: f'<span class="sev sev-{h(str(s).lower())}">{h(s)}</span>'
+    )
     evidence_rows = "".join(
-        f"<tr><td>{e.get('source','?')}</td><td>{e.get('value','?')}</td><td>{e.get('confidence',0)*100:.0f}%</td></tr>"
+        f"<tr><td>{h(e.get('source','?'))}</td><td>{h(e.get('value','?'))}</td>"
+        f"<td class=num>{e.get('confidence',0)*100:.0f}%</td></tr>"
         for e in kw["evidence"]
-    )
+    ) or '<tr><td colspan="3" class="empty">No AI code detected.</td></tr>'
     issue_rows = "".join(
-        f"<tr><td>{i.get('rule','?')}</td><td>{i.get('file','?')}</td><td>{i.get('severity','?')}</td><td>{i.get('message','?')}</td></tr>"
+        f"<tr><td><code>{h(i.get('rule','?'))}</code></td><td>{h(i.get('file','?'))}</td>"
+        f"<td>{sev_badge(i.get('severity','?'))}</td><td>{h(i.get('message','?'))}</td></tr>"
         for i in kw["issues"][:20]
-    )
+    ) or '<tr><td colspan="4" class="empty">No quality issues detected.</td></tr>'
     b = kw["score"].get("breakdown", {})
+    result_value = kw["result_value"]
+    overall_text = {"pass": "✅ PASS", "warn": "⚠️ WARN", "block": "❌ BLOCK"}.get(
+        result_value, h(kw["overall"])
+    )
+    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    def bar(label, pct):
+        return (
+            f'<div class="metric"><div class="metric-head"><span>{h(label)}</span>'
+            f'<span class="num">{pct:.0f}%</span></div>'
+            f'<div class="track"><div class="fill" style="width:{min(max(pct,0),100):.0f}%"></div></div></div>'
+        )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>ODS AI Code Quality Report</title>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ODS AI Code Quality Report</title>
 <style>
-  body {{ font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #c9d1d9; background: #0d1117; }}
-  h1 {{ color: #f0f6fc; }}
-  .result {{ font-size: 1.5em; padding: 10px 20px; border-radius: 6px; display: inline-block; }}
-  .pass {{ background: #2ea04320; color: #2ea043; border: 1px solid #2ea043; }}
-  .warn {{ background: #d2992220; color: #d29922; border: 1px solid #d29922; }}
-  .block {{ background: #cf222e20; color: #cf222e; border: 1px solid #cf222e; }}
-  table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
-  th, td {{ padding: 8px 12px; text-align: left; border-bottom: 1px solid #30363d; }}
-  th {{ background: #161b22; color: #f0f6fc; }}
-  .section {{ margin: 30px 0; }}
-  .section h2 {{ border-bottom: 1px solid #30363d; padding-bottom: 8px; }}
-</style></head>
+  :root {{ --bg:#0d1117; --panel:#161b22; --border:#30363d; --fg:#c9d1d9; --muted:#8b949e; --fg-strong:#f0f6fc;
+           --pass:#2ea043; --warn:#d29922; --block:#cf222e; --accent:#58a6ff; }}
+  * {{ box-sizing: border-box; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+          max-width: 880px; margin: 0 auto; padding: 40px 20px; color: var(--fg); background: var(--bg);
+          line-height: 1.55; }}
+  a {{ color: var(--accent); }}
+  header {{ display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+            border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 8px; }}
+  header h1 {{ font-size: 1.4em; color: var(--fg-strong); margin: 0; }}
+  header .sub {{ color: var(--muted); font-size: .85em; }}
+  .result {{ font-size: 1.25em; font-weight: 600; padding: 8px 18px; border-radius: 999px; display: inline-block; }}
+  .pass {{ background: #2ea04318; color: var(--pass); border: 1px solid var(--pass); }}
+  .warn {{ background: #d2992218; color: var(--warn); border: 1px solid var(--warn); }}
+  .block {{ background: #cf222e18; color: var(--block); border: 1px solid var(--block); }}
+  .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 24px 0; }}
+  .card {{ background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }}
+  .card .label {{ color: var(--muted); font-size: .8em; text-transform: uppercase; letter-spacing: .04em; }}
+  .card .value {{ font-size: 1.35em; font-weight: 600; color: var(--fg-strong); margin-top: 4px; }}
+  .section {{ margin: 32px 0; }}
+  .section h2 {{ font-size: 1.05em; color: var(--fg-strong); border-bottom: 1px solid var(--border);
+                 padding-bottom: 8px; margin-bottom: 14px; }}
+  table {{ border-collapse: collapse; width: 100%; font-size: .92em; }}
+  th, td {{ padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }}
+  th {{ background: var(--panel); color: var(--fg-strong); font-weight: 600; }}
+  td.num, th.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+  td.empty {{ color: var(--muted); text-align: center; padding: 18px; }}
+  code {{ background: #6e768133; padding: 1px 6px; border-radius: 4px; font-size: .9em; }}
+  .sev {{ font-size: .8em; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }}
+  .sev-critical {{ background: #cf222e22; color: var(--block); }}
+  .sev-high {{ background: #d1242f22; color: #f85149; }}
+  .sev-medium {{ background: #d2992222; color: var(--warn); }}
+  .sev-low {{ background: #2ea04322; color: var(--pass); }}
+  .metric {{ margin: 12px 0; }}
+  .metric-head {{ display: flex; justify-content: space-between; font-size: .9em; margin-bottom: 4px; }}
+  .track {{ background: var(--panel); border-radius: 999px; height: 8px; overflow: hidden; border: 1px solid var(--border); }}
+  .fill {{ background: var(--accent); height: 100%; }}
+  footer {{ margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: .82em; }}
+</style>
+</head>
 <body>
-<h1>ODS AI Code Quality Report</h1>
-<div class="result {kw['result_value']}">{kw['overall']}</div>
-<div class="section"><h2>Summary</h2>
-<p><strong>AI Detected:</strong> {'Yes' if kw['ai_detected'] else 'No'} ({kw['ai_confidence']*100:.0f}% confidence)</p>
-<p><strong>Tech Debt Delta:</strong> {kw['tech_debt']:+.1f} ({kw['verdict']})</p>
-<p><strong>Policy:</strong> {'Allowed' if kw['policy_allowed'] else 'Blocked'}</p>
+<header>
+  <div>
+    <h1>ODS AI Code Quality Report</h1>
+    <div class="sub">Detect · Analyze · Score · Enforce</div>
+  </div>
+  <div class="result {result_value}">{overall_text}</div>
+</header>
+
+<div class="cards">
+  <div class="card"><div class="label">AI Detected</div>
+    <div class="value">{'🤖 Yes' if kw['ai_detected'] else '👤 No'}</div>
+    <div class="sub">{kw['ai_confidence']*100:.0f}% confidence</div></div>
+  <div class="card"><div class="label">Tech Debt Delta</div>
+    <div class="value">{kw['tech_debt']:+.1f}</div>
+    <div class="sub">{h(kw['verdict'])}</div></div>
+  <div class="card"><div class="label">Policy</div>
+    <div class="value">{'✅ Allowed' if kw['policy_allowed'] else '❌ Blocked'}</div></div>
 </div>
-<div class="section"><h2>Detection Evidence</h2>
-<table><tr><th>Source</th><th>Signal</th><th>Confidence</th></tr>
-{evidence_rows}
-</table></div>
-<div class="section"><h2>Issues</h2>
-{kw['analyze_summary']}<br><br>
-<table><tr><th>Rule</th><th>File</th><th>Severity</th><th>Message</th></tr>
-{issue_rows}
-</table></div>
-<div class="section"><h2>Score Breakdown</h2>
-<table><tr><th>Dimension</th><th>Value</th></tr>
-<tr><td>AI Code Ratio</td><td>{b.get('ai_code_ratio',0)*100:.0f}%</td></tr>
-<tr><td>Defect Density</td><td>{b.get('defect_density',0):.1f} / KLOC</td></tr>
-<tr><td>Critical Issues</td><td>{b.get('critical_issues',0)}</td></tr>
-<tr><td>Test Coverage</td><td>{b.get('test_coverage',0)*100:.0f}%</td></tr>
-<tr><td>Duplication Rate</td><td>{b.get('duplication_rate',0)*100:.0f}%</td></tr>
-</table></div>
+
+<div class="section"><h2>🔍 Detection Evidence</h2>
+<table><thead><tr><th>Source</th><th>Signal</th><th class="num">Confidence</th></tr></thead>
+<tbody>{evidence_rows}</tbody></table></div>
+
+<div class="section"><h2>📊 Quality Issues</h2>
+<p class="sub">{h(kw['analyze_summary'])}</p>
+<table><thead><tr><th>Rule</th><th>File</th><th>Severity</th><th>Message</th></tr></thead>
+<tbody>{issue_rows}</tbody></table></div>
+
+<div class="section"><h2>📈 Technical Debt Breakdown</h2>
+{bar('AI Code Ratio', b.get('ai_code_ratio',0)*100)}
+{bar('Test Coverage', b.get('test_coverage',0)*100)}
+{bar('Duplication Rate', b.get('duplication_rate',0)*100)}
+<table><tbody>
+<tr><td>Defect Density</td><td class="num">{b.get('defect_density',0):.1f} / KLOC</td></tr>
+<tr><td>Critical Issues</td><td class="num">{b.get('critical_issues',0)}</td></tr>
+</tbody></table></div>
+
+<footer>
+  Generated by <a href="https://github.com/open-delivery-spec/validate-action">ODS validate-action</a> ·
+  {generated} · Signals are heuristic — ODS is a signal producer, not a quality oracle.
+</footer>
 </body></html>"""
 
 
