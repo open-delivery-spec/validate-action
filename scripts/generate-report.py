@@ -48,6 +48,7 @@ def main():
     score = load_json(os.path.join(report_dir, "score.json"))
     check = load_json(os.path.join(report_dir, "check.json"))
 
+    detect_error = detect.get("_ods_detect_error", False)
     ai_detected = detect.get("ai_generated", False)
     ai_confidence = detect.get("confidence", 0)
     detect_summary = detect.get("summary", "No AI detection result")
@@ -67,6 +68,10 @@ def main():
     if not policy_allowed:
         overall = "\u274c BLOCK"
         result_value = "block"
+    elif detect_error:
+        # Detection failed \u2014 treat as warn so the PR isn't silently passed
+        overall = "\u26a0\ufe0f  WARN"
+        result_value = "warn"
     elif ai_detected and ai_confidence >= 0.8 and len(issues) > 0:
         overall = "\u26a0\ufe0f  WARN"
         result_value = "warn"
@@ -85,11 +90,13 @@ def main():
             f.write(f"ai_confidence={ai_confidence}\n")
             f.write(f"tech_debt_delta={tech_debt}\n")
             f.write(f"policy_allowed={'true' if policy_allowed else 'false'}\n")
+            f.write(f"detect_error={'true' if detect_error else 'false'}\n")
 
     # Combined JSON report
     report = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "result": result_value,
+        "detect_error": detect_error,
         "ai_detected": ai_detected,
         "ai_confidence": ai_confidence,
         "ai_files": files,
@@ -120,6 +127,7 @@ def main():
     md = build_markdown(
         overall=overall,
         result_value=result_value,
+        detect_error=detect_error,
         ai_detected=ai_detected,
         ai_confidence=ai_confidence,
         tech_debt=tech_debt,
@@ -155,6 +163,7 @@ def main():
     html = build_html(
         result_value=result_value,
         overall=overall,
+        detect_error=detect_error,
         ai_detected=ai_detected,
         ai_confidence=ai_confidence,
         tech_debt=tech_debt,
@@ -177,7 +186,12 @@ def main():
 def build_markdown(**kw):
     # NOTE: keep backslash escapes out of f-string expression braces \u2014 that
     # syntax requires Python 3.12+, but CI runners may ship an older python3.
-    ai_label = "\U0001f916 Yes" if kw["ai_detected"] else "\U0001f464 No"
+    if kw.get("detect_error"):
+        ai_label = "⚠️ Inconclusive"
+    elif kw["ai_detected"]:
+        ai_label = "\U0001f916 Yes"
+    else:
+        ai_label = "\U0001f464 No"
     policy_label = "\u2705 Allowed" if kw["policy_allowed"] else "\u274c Blocked"
     lines = [
         "<!-- ods-compliance-report -->",
@@ -192,12 +206,20 @@ def build_markdown(**kw):
 
     # Detection
     lines.append("### \U0001f50d Detection")
+    if kw.get("detect_error"):
+        lines.extend([
+            "",
+            "> **⚠️ Detection inconclusive** — `ods detect` did not complete successfully.",
+            "> This PR is marked **WARN** until detection can be confirmed.",
+            "> Check the workflow logs (`ods detect error output` group) for the root cause.",
+            "",
+        ])
     ev = kw["evidence"]
     if ev:
         lines.extend(["", "| Source | Signal | Confidence |", "|--------|--------|-----------|"])
         for e in ev:
             lines.append(f"| {md_cell(e.get('source','?'))} | {md_cell(e.get('value','?'))} | {e.get('confidence',0)*100:.0f}% |")
-    else:
+    elif not kw.get("detect_error"):
         lines.append("No AI code detected.")
 
     # Analysis
@@ -288,11 +310,19 @@ def build_html(**kw):
     sev_badge = (
         lambda s: f'<span class="sev sev-{h(str(s).lower())}">{h(s)}</span>'
     )
+    if kw.get("detect_error"):
+        _detect_empty = (
+            '<tr><td colspan="3" class="empty detect-error">'
+            '⚠️ Detection inconclusive — ods detect did not complete. '
+            'Check workflow logs for the root cause.</td></tr>'
+        )
+    else:
+        _detect_empty = '<tr><td colspan="3" class="empty">No AI code detected.</td></tr>'
     evidence_rows = "".join(
         f"<tr><td>{h(e.get('source','?'))}</td><td>{h(e.get('value','?'))}</td>"
         f"<td class=num>{e.get('confidence',0)*100:.0f}%</td></tr>"
         for e in kw["evidence"]
-    ) or '<tr><td colspan="3" class="empty">No AI code detected.</td></tr>'
+    ) or _detect_empty
     issue_rows = "".join(
         f"<tr><td><code>{h(i.get('rule','?'))}</code></td><td>{h(i.get('file','?'))}</td>"
         f"<td>{sev_badge(i.get('severity','?'))}</td><td>{h(i.get('message','?'))}</td></tr>"
@@ -346,6 +376,7 @@ def build_html(**kw):
   th {{ background: var(--panel); color: var(--fg-strong); font-weight: 600; }}
   td.num, th.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
   td.empty {{ color: var(--muted); text-align: center; padding: 18px; }}
+  td.detect-error {{ color: var(--warn); }}
   code {{ background: #6e768133; padding: 1px 6px; border-radius: 4px; font-size: .9em; }}
   .sev {{ font-size: .8em; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }}
   .sev-critical {{ background: #cf222e22; color: var(--block); }}
@@ -370,7 +401,7 @@ def build_html(**kw):
 
 <div class="cards">
   <div class="card"><div class="label">AI Detected</div>
-    <div class="value">{'🤖 Yes' if kw['ai_detected'] else '👤 No'}</div>
+    <div class="value">{'⚠️ Inconclusive' if kw.get('detect_error') else ('🤖 Yes' if kw['ai_detected'] else '👤 No')}</div>
     <div class="sub">{kw['ai_confidence']*100:.0f}% confidence</div></div>
   <div class="card"><div class="label">Tech Debt Delta</div>
     <div class="value">{kw['tech_debt']:+.1f}</div>
