@@ -168,6 +168,17 @@ runs:
         ods detect --json $DETECT_FLAGS > "$DETECT_JSON" 2>"$ODS_OUTPUT_DIR/detect.stderr"
         DETECT_EXIT=$?
         set -e
+        # ods detect exits non-zero for BOTH errors AND high-confidence positive results.
+        # Validate by checking for the expected 'ai_generated' key in the JSON output —
+        # if absent the file is empty/corrupt and detection is inconclusive.
+        if ! python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if 'ai_generated' in d else 1)" "$DETECT_JSON" 2>/dev/null; then
+          echo "::warning::ods detect produced no valid output (exit=$DETECT_EXIT) — detection marked inconclusive"
+          if [ -s "$ODS_OUTPUT_DIR/detect.stderr" ]; then
+            echo "--- ods detect error output ---"
+            cat "$ODS_OUTPUT_DIR/detect.stderr"
+          fi
+          printf '{"_ods_detect_error":true,"ai_generated":false,"confidence":0,"evidence":[],"sources":[],"summary":"Detection inconclusive"}\n' > "$DETECT_JSON"
+        fi
         echo "::endgroup::"
 
         echo "::group::② Analyze — AI Code Quality"
