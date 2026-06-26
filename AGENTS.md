@@ -26,21 +26,26 @@ The action is published under the `v1` tag, which is kept pointing to the latest
 
   Never branch from a stale local `main` or from another feature branch.
 
-- **Branch names must follow Conventional Branch naming.** Allowed prefixes:
+- **Branch names must follow [Conventional Branch](https://conventional-branch.github.io/) naming.** Allowed prefixes:
 
   | Prefix | Use for |
   |--------|---------|
-  | `feat/` | New action inputs, outputs, or steps |
-  | `fix/` | Bug fixes in scripts or action logic |
-  | `docs/` | Documentation only |
-  | `chore/` | Dependency bumps, maintenance |
-  | `ci/` | CI/CD changes |
-  | `refactor/` | Internal refactoring |
-  | `test/` | Test fixture or test workflow changes |
+  | `feature/` | New action inputs, outputs, or steps |
+  | `bugfix/` | Bug fixes in scripts or action logic |
+  | `hotfix/` | Urgent fixes |
+  | `release/` | Release preparation |
+  | `chore/` | Dependency bumps, maintenance, **docs, CI, test fixtures, refactors** |
 
-  AI-agent branches are also accepted: `claude/`, `copilot/`, `github-actions/`
+  AI-agent branches are also accepted: `claude/`, `copilot/`, `cursor/`, `github-actions/`
+
+  Long-lived branches: `main`, `master`, `develop`
 
   Branch names must be lowercase. The description part must not contain `/`.
+
+  > ⚠️ **Conventional _Branch_ types ≠ Conventional _Commit_ types.** Branch names use
+  > `feature/bugfix/hotfix/release/chore`; commit messages use `feat/fix/docs/test/…`.
+  > `test/`, `feat/`, `fix/`, `docs/`, `ci/` are **not** valid branch prefixes and are
+  > rejected by `commit-check`. For docs/test/CI work, branch under `chore/`.
 
 ## Commit Message Rules
 
