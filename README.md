@@ -54,6 +54,30 @@ That’s it. The Action automatically:
 
 ---
 
+## Run It Locally
+
+Iterate on detection and policy **without pushing a PR**. `scripts/run-local.sh`
+runs the exact same detect → analyze → score → check pipeline this Action runs in
+CI, then renders the same HTML/Markdown report locally.
+
+```bash
+# Requires the ods CLI on PATH:
+#   go install github.com/open-delivery-spec/cli/cmd/ods@latest
+
+scripts/run-local.sh                          # diff against origin/main
+scripts/run-local.sh --diff-base HEAD~3       # last 3 commits
+scripts/run-local.sh --policy .ods/policy.rego
+```
+
+Output lands in `.ods/out/` (`index.html`, `ods-summary.md`, and the raw
+`detect/analyze/score/check.json`). The script exits non-zero when the policy
+blocks the change — the same gate as CI — so you can wire it into a pre-push hook.
+
+Flags: `--diff-base`, `--branch`, `--policy`, `--commits`, `--output-dir`,
+`--pr-body`, `--pr-file` (run with `--help` for details).
+
+---
+
 ## Versioning & Stability
 
 Pin the Action to a major tag so you receive fixes without breaking changes:
