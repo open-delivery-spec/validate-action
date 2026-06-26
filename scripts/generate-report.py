@@ -39,6 +39,22 @@ def h(value):
     return html.escape(str(value), quote=True)
 
 
+def coverage_label(cov):
+    """Format a coverage fraction for display.
+
+    ODS uses -1.0 as the "not measured" sentinel; rendering it as a percentage
+    produces a nonsensical "-100%". Show "N/A" instead, matching the CLI's
+    FormatScore behavior.
+    """
+    try:
+        cov = float(cov)
+    except (TypeError, ValueError):
+        return "N/A"
+    if cov < 0:
+        return "N/A"
+    return f"{cov*100:.0f}%"
+
+
 def main():
     report_dir = sys.argv[1]
     github_output = sys.argv[2] if len(sys.argv) > 2 else ""
@@ -241,7 +257,7 @@ def build_markdown(**kw):
         f"| AI Code Ratio | {b.get('ai_code_ratio',0)*100:.0f}% |",
         f"| Defect Density | {b.get('defect_density',0):.1f} / KLOC |",
         f"| Critical Issues | {b.get('critical_issues',0)} |",
-        f"| Test Coverage | {b.get('test_coverage',0)*100:.0f}% |",
+        f"| Test Coverage | {coverage_label(b.get('test_coverage',0))} |",
         f"| Duplication Rate | {b.get('duplication_rate',0)*100:.0f}% |",
         "",
         f"**Verdict:** {kw['verdict']} \u2014 {kw['recommendation']}",
@@ -335,10 +351,11 @@ def build_html(**kw):
     )
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    def bar(label, pct):
+    def bar(label, pct, display=None):
+        shown = display if display is not None else f"{pct:.0f}%"
         return (
             f'<div class="metric"><div class="metric-head"><span>{h(label)}</span>'
-            f'<span class="num">{pct:.0f}%</span></div>'
+            f'<span class="num">{h(shown)}</span></div>'
             f'<div class="track"><div class="fill" style="width:{min(max(pct,0),100):.0f}%"></div></div></div>'
         )
 
@@ -421,7 +438,7 @@ def build_html(**kw):
 
 <div class="section"><h2>📈 Technical Debt Breakdown</h2>
 {bar('AI Code Ratio', b.get('ai_code_ratio',0)*100)}
-{bar('Test Coverage', b.get('test_coverage',0)*100)}
+{bar('Test Coverage', b.get('test_coverage',0)*100, coverage_label(b.get('test_coverage',0)))}
 {bar('Duplication Rate', b.get('duplication_rate',0)*100)}
 <table><tbody>
 <tr><td>Defect Density</td><td class="num">{b.get('defect_density',0):.1f} / KLOC</td></tr>
