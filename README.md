@@ -181,6 +181,7 @@ ODS also reads supplemental ODS-specific trailer fields (`AI-assisted: true`, `A
 | `branch` | No | auto-detected | Branch name |
 | `commits` | No | `10` | Max commits to scan for AI markers |
 | `policy` | No | `.ods/policy.rego` | Path to OPA Rego policy file |
+| `sarif` | No | — | SARIF file from an external analyzer to merge ([details](#authoritative-analysis-bring-your-own-scanner-sarif)) |
 | `summary` | No | `true` | Append report to job summary |
 | `comment` | No | `true` | Post/update PR comment |
 | `artifact` | No | `true` | Upload report as workflow artifact |
@@ -210,6 +211,56 @@ ods-report/
 ├── ods-report.json     (machine-readable JSON)
 ├── ods-summary.md      (Markdown for job summary / PR comment)
 └── ods-badge.svg       (badge showing result)
+```
+
+---
+
+## Authoritative Analysis: Bring Your Own Scanner (SARIF)
+
+ODS ships a handful of lightweight, intentionally conservative built-in
+heuristics. They are **hints, not a verdict** — and they are strongest on Go.
+For authoritative, multi-language analysis, point a dedicated scanner at your
+code and feed its results to ODS via the `sarif` input. ODS merges those
+findings into the analysis, the score, and the policy gate alongside its own.
+
+Any tool that emits **SARIF v2.1.0** works — Semgrep, CodeQL, golangci-lint,
+ESLint, Bandit, and more. ODS becomes the governance layer over the scanners
+you already trust.
+
+### Example: Semgrep → ODS
+
+```yaml
+- uses: actions/checkout@v7
+  with:
+    fetch-depth: 0
+
+- name: Run Semgrep
+  run: |
+    pip install semgrep
+    # '|| true' so a non-zero scan result doesn't fail the step;
+    # ODS decides pass/warn/block from the findings.
+    semgrep --config auto --sarif --output semgrep.sarif || true
+
+- uses: open-delivery-spec/validate-action@v1
+  with:
+    sarif: semgrep.sarif
+```
+
+The same pattern works with any scanner — produce a `.sarif` file in an earlier
+step, then pass its path as `sarif:`. For example, golangci-lint
+(`--out-format sarif`), ESLint (`@microsoft/eslint-formatter-sarif`), or Ruff
+(`--output-format sarif`).
+
+Findings carry their original rule IDs and severities (mapped to ODS
+`critical`/`high`/`medium`/`low`/`info`), so your Rego policy can gate on them
+just like built-in rules:
+
+```rego
+deny[msg] {
+    issue := input.issues[_]
+    issue.severity == "high"
+    msg := sprintf("%s at %s:%d", [issue.rule, issue.file, issue.line])
+}
 ```
 
 ---
