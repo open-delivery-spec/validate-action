@@ -75,6 +75,19 @@ jobs:
           echo "AI detected: ${{ steps.with-pr-body.outputs.ai-detected }}"
           test "${{ steps.with-pr-body.outputs.ai-detected }}" = "true"
 
+      - name: Pipeline with external SARIF (Semgrep findings)
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          sarif: test-fixtures/sample-semgrep.sarif
+          artifact-name: ods-report-sarif
+          comment: "false"
+
+      - name: Verify external SARIF findings were merged
+        run: |
+          grep -q "dangerous-exec-command" ods-report/analyze.json
+          echo "External SARIF finding merged into analysis ✓"
+
       - name: Pipeline without PR comment or artifact
         uses: ./
         with:

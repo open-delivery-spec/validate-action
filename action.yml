@@ -33,6 +33,14 @@ inputs:
     required: false
     default: '.ods/policy.rego'
 
+  sarif:
+    description: >-
+      Path to a SARIF v2.1.0 file from an external analyzer (Semgrep, CodeQL,
+      golangci-lint, ESLint, ...) to merge into the analysis. These findings are
+      authoritative and multi-language; ODS built-in heuristics are only hints.
+    required: false
+    default: ''
+
   summary:
     description: 'Append Markdown report to the GitHub Actions job summary'
     required: false
@@ -115,6 +123,7 @@ runs:
         ODS_BRANCH: ${{ inputs.branch }}
         ODS_COMMITS: ${{ inputs.commits }}
         ODS_POLICY: ${{ inputs.policy }}
+        ODS_SARIF: ${{ inputs.sarif }}
         ODS_OUTPUT_DIR: ${{ inputs.output-dir }}
         INPUT_SUMMARY: ${{ inputs.summary }}
         GITHUB_HEAD_REF: ${{ github.head_ref }}
@@ -183,8 +192,17 @@ runs:
 
         echo "::group::② Analyze — AI Code Quality"
         ANALYZE_JSON="$ODS_OUTPUT_DIR/analyze.json"
+        ANALYZE_FLAGS=()
+        if [ -n "${ODS_SARIF:-}" ]; then
+          if [ -f "$ODS_SARIF" ]; then
+            ANALYZE_FLAGS+=(--sarif "$ODS_SARIF")
+            echo "Merging external SARIF findings from: $ODS_SARIF"
+          else
+            echo "::warning::sarif input set to '$ODS_SARIF' but the file was not found — skipping SARIF merge"
+          fi
+        fi
         set +e
-        ods analyze --json 2>/dev/null > "$ANALYZE_JSON" || \
+        ods analyze --json "${ANALYZE_FLAGS[@]}" 2>/dev/null > "$ANALYZE_JSON" || \
           echo '{"issues":[],"total_lines":0,"summary":"No code analyzed"}' > "$ANALYZE_JSON"
         set -e
         echo "::endgroup::"
