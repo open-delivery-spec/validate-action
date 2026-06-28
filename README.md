@@ -186,6 +186,8 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `sarif` | No | — | SARIF file from an external analyzer to merge ([details](#authoritative-analysis-bring-your-own-scanner-sarif)) |
 | `semgrep` | No | `false` | Run Semgrep automatically and merge its findings (ignored when `sarif` is set) |
 | `semgrep-config` | No | `auto` | Semgrep ruleset when `semgrep: true` (registry ID or local rules file) |
+| `report` | No | `false` | Append an AI attribution digest to the summary/comment/artifact ([details](#periodic-ai-attribution-digest)) |
+| `report-since` | No | `90 days ago` | History window for the attribution digest (any git `--since` expression) |
 | `summary` | No | `true` | Append report to job summary |
 | `comment` | No | `true` | Post/update PR comment |
 | `artifact` | No | `true` | Upload report as workflow artifact |
@@ -214,8 +216,52 @@ ods-report/
 ├── index.html          (standalone HTML report)
 ├── ods-report.json     (machine-readable JSON)
 ├── ods-summary.md      (Markdown for job summary / PR comment)
-└── ods-badge.svg       (badge showing result)
+├── ods-badge.svg       (badge showing result)
+├── attribution.json    (only with report: true — raw ods report output)
+└── ods-attribution.md  (only with report: true — rendered digest)
 ```
+
+---
+
+## Periodic AI Attribution Digest
+
+Set `report: true` to append an **AI attribution digest** — AI vs human commit
+and changed-line share over a window, with a per-tool breakdown — to the job
+summary, the PR comment, and the artifact. It answers "how much of our delivery
+is AI-assisted, and trending which way?"
+
+```yaml
+- uses: actions/checkout@v7
+  with:
+    fetch-depth: 0          # required: the digest reads git history
+- uses: open-delivery-spec/validate-action@v1
+  with:
+    report: true
+    report-since: "30 days ago"   # optional, defaults to 90 days
+```
+
+For a recurring org-wide digest, run it on a schedule and read it from the job
+summary (no PR to comment on):
+
+```yaml
+on:
+  schedule:
+    - cron: "0 9 * * 1"     # Mondays 09:00 UTC
+jobs:
+  ai-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: open-delivery-spec/validate-action@v1
+        with:
+          report: true
+          comment: false
+```
+
+Like all detection in ODS, this is **attribution from `Co-Authored-By` trailers**
+— what AI tools disclose, not forensic detection.
 
 ---
 

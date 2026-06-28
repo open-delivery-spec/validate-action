@@ -55,6 +55,19 @@ inputs:
     required: false
     default: 'auto'
 
+  report:
+    description: >-
+      Append an AI attribution digest (AI vs human commit/line share over a
+      window) to the job summary, PR comment, and artifact. Needs full git
+      history (checkout with fetch-depth: 0).
+    required: false
+    default: 'false'
+
+  report-since:
+    description: 'History window for the attribution digest (any git --since expression).'
+    required: false
+    default: '90 days ago'
+
   summary:
     description: 'Append Markdown report to the GitHub Actions job summary'
     required: false
@@ -289,6 +302,39 @@ runs:
           echo "::error::ODS policy blocked this change"
           exit 1
         fi
+
+    - name: AI Attribution Report (optional)
+      # always() so the digest still renders even when the pipeline blocked above.
+      if: always() && inputs.report == 'true'
+      shell: bash
+      env:
+        REPORT_SINCE: ${{ inputs.report-since }}
+        OUT_DIR: ${{ inputs.output-dir }}
+        INPUT_SUMMARY: ${{ inputs.summary }}
+        ACTION_DIR: ${{ github.action_path }}
+      run: |
+        set -uo pipefail
+        echo "::group::AI Attribution Report"
+        mkdir -p "$OUT_DIR"
+        if ! ods report --since "$REPORT_SINCE" --json > "$OUT_DIR/attribution.json" 2>"$OUT_DIR/attribution.stderr"; then
+          echo "::warning::ods report failed — skipping attribution digest"
+          [ -s "$OUT_DIR/attribution.stderr" ] && cat "$OUT_DIR/attribution.stderr"
+          echo "::endgroup::"
+          exit 0
+        fi
+        MD=$(python3 "$ACTION_DIR/scripts/render-attribution.py" "$OUT_DIR/attribution.json") || {
+          echo "::warning::could not render attribution digest"; echo "::endgroup::"; exit 0; }
+        printf '%s\n' "$MD" > "$OUT_DIR/ods-attribution.md"
+        # Append to the shared summary so it also reaches the PR comment.
+        if [ -f "$OUT_DIR/ods-summary.md" ]; then
+          printf '\n%s\n' "$MD" >> "$OUT_DIR/ods-summary.md"
+        fi
+        # Append to the GitHub job summary.
+        if [ "${INPUT_SUMMARY:-true}" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          printf '\n%s\n' "$MD" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        echo "$MD"
+        echo "::endgroup::"
 
     - name: Upload ODS Report
       if: inputs.artifact == 'true'
