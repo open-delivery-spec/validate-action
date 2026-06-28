@@ -109,6 +109,22 @@ jobs:
           grep -q "ods-test-eval-call" ods-report/analyze.json
           echo "Auto-Semgrep finding merged into analysis ✓"
 
+      - name: Pipeline with AI attribution report
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          report: "true"
+          report-since: "365 days ago"
+          artifact-name: ods-report-attribution
+          comment: "false"
+
+      - name: Verify attribution digest rendered
+        run: |
+          test -f ods-report/attribution.json
+          test -f ods-report/ods-attribution.md
+          grep -q "AI Attribution" ods-report/ods-attribution.md
+          echo "AI attribution digest rendered ✓"
+
       - name: Pipeline without PR comment or artifact
         uses: ./
         with:
