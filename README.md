@@ -3,7 +3,7 @@
 [![ODS Validate](https://github.com/open-delivery-spec/validate-action/actions/workflows/ods-validate.yml/badge.svg)](https://github.com/open-delivery-spec/validate-action/actions/workflows/ods-validate.yml)
 [![CI](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml/badge.svg)](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml)
 
-> **Zero-config AI code detection for teams using Claude Code, Copilot, or Cursor.** These tools already write `Co-Authored-By` trailers to every commit. ODS reads them automatically in CI — detecting AI-generated code, analyzing quality, scoring technical debt, and enforcing policy on every PR.
+> **Zero-config AI code quality gate for teams using Claude Code, Copilot, or Cursor.** These tools already stamp `Co-Authored-By` trailers on every commit, so ODS attributes AI-generated code automatically in CI — then analyzes quality, scores technical debt, and enforces policy on every PR. No disclosure forms, no manual tagging.
 
 ---
 
@@ -47,7 +47,7 @@ jobs:
 
 That’s it. The Action automatically:
 
-1. **Detects** AI-generated code (`Co-Authored-By` trailers, PR disclosure, branch names, diff heuristics)
+1. **Attributes** AI-generated code (`Co-Authored-By` trailers, PR disclosure, branch names, diff heuristics)
 2. **Analyzes** code quality (5 rule categories for AI-specific defects)
 3. **Scores** technical debt impact (5-dimension weighted model)
 4. **Enforces** policy (OPA Rego — optional, place at `.ods/policy.rego`)
@@ -100,7 +100,7 @@ Pin the Action to a major tag so you receive fixes without breaking changes:
 
 ---
 
-## AI Detection: `Co-Authored-By` as the Primary Signal
+## AI Attribution: `Co-Authored-By` as the Primary Signal
 
 ODS reads `Co-Authored-By` trailers that AI tools already emit automatically:
 
@@ -113,6 +113,8 @@ ODS reads `Co-Authored-By` trailers that AI tools already emit automatically:
 No configuration required — if your team uses any of these tools, AI attribution is detected automatically from the commits.
 
 ODS also reads supplemental ODS-specific trailer fields (`AI-assisted: true`, `AI-tool: name`) for teams that add them, but `Co-Authored-By` is sufficient on its own.
+
+This is **attribution from signals the tools volunteer**, not forensic detection: an author who strips the trailer can evade it, and the diff heuristics are only a low-confidence fallback. ODS surfaces what AI tools disclose — it does not claim to unmask code that hides it.
 
 ---
 
