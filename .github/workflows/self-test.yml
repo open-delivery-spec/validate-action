@@ -95,6 +95,23 @@ jobs:
           grep -q "dangerous-exec-command" ods-report/analyze.json
           echo "External SARIF finding merged into analysis ✓"
 
+      - name: Pipeline enforces SARIF findings (policy blocks)
+        id: enforce
+        continue-on-error: true
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          sarif: test-fixtures/sample-semgrep.sarif
+          policy: test-fixtures/policy-block-high.rego
+          artifact-name: ods-report-enforce
+          comment: "false"
+
+      - name: Verify SARIF finding blocked the run
+        run: |
+          test "${{ steps.enforce.outputs.result }}" = "block"
+          grep -q '"allowed": false' ods-report/check.json
+          echo "SARIF high finding enforced by policy gate ✓"
+
       - name: "Pipeline with built-in Semgrep (semgrep: true)"
         uses: ./
         with:

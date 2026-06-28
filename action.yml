@@ -36,8 +36,9 @@ inputs:
   sarif:
     description: >-
       Path to a SARIF v2.1.0 file from an external analyzer (Semgrep, CodeQL,
-      golangci-lint, ESLint, ...) to merge into the analysis. These findings are
-      authoritative and multi-language; ODS built-in heuristics are only hints.
+      golangci-lint, ESLint, ...) to merge into the analysis, score, and policy
+      gate. These findings are authoritative and multi-language; ODS built-in
+      heuristics are only hints.
     required: false
     default: ''
 
@@ -252,17 +253,19 @@ runs:
         if [ -z "$SARIF_FILE" ] && [ -n "${ODS_GENERATED_SARIF:-}" ]; then
           SARIF_FILE="$ODS_GENERATED_SARIF"
         fi
-        ANALYZE_FLAGS=()
+        # SARIF_FLAGS is shared across analyze/score/check so external findings
+        # reach the score and the policy gate, not just the analyze report.
+        SARIF_FLAGS=()
         if [ -n "$SARIF_FILE" ]; then
           if [ -f "$SARIF_FILE" ]; then
-            ANALYZE_FLAGS+=(--sarif "$SARIF_FILE")
+            SARIF_FLAGS+=(--sarif "$SARIF_FILE")
             echo "Merging external SARIF findings from: $SARIF_FILE"
           else
             echo "::warning::SARIF file '$SARIF_FILE' not found — skipping SARIF merge"
           fi
         fi
         set +e
-        ods analyze --json "${ANALYZE_FLAGS[@]}" 2>/dev/null > "$ANALYZE_JSON" || \
+        ods analyze --json "${SARIF_FLAGS[@]}" 2>/dev/null > "$ANALYZE_JSON" || \
           echo '{"issues":[],"total_lines":0,"summary":"No code analyzed"}' > "$ANALYZE_JSON"
         set -e
         echo "::endgroup::"
@@ -270,7 +273,7 @@ runs:
         echo "::group::③ Score — Technical Debt Impact"
         SCORE_JSON="$ODS_OUTPUT_DIR/score.json"
         set +e
-        ods score --json 2>/dev/null > "$SCORE_JSON" || \
+        ods score --json "${SARIF_FLAGS[@]}" 2>/dev/null > "$SCORE_JSON" || \
           echo '{"technical_debt_delta":0,"verdict":"neutral"}' > "$SCORE_JSON"
         set -e
         echo "::endgroup::"
@@ -280,9 +283,9 @@ runs:
         CHECK_EXIT=0
         set +e
         if [ -n "${ODS_POLICY:-}" ] && [ -f "$ODS_POLICY" ]; then
-          ods check --json --policy "$ODS_POLICY" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
+          ods check --json --policy "$ODS_POLICY" "${SARIF_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
         else
-          ods check --json > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
+          ods check --json "${SARIF_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
         fi
         set -e
         echo "::endgroup::"
