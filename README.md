@@ -184,6 +184,8 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `commits` | No | `10` | Max commits to scan for AI markers |
 | `policy` | No | `.ods/policy.rego` | Path to OPA Rego policy file |
 | `sarif` | No | — | SARIF file from an external analyzer to merge ([details](#authoritative-analysis-bring-your-own-scanner-sarif)) |
+| `semgrep` | No | `false` | Run Semgrep automatically and merge its findings (ignored when `sarif` is set) |
+| `semgrep-config` | No | `auto` | Semgrep ruleset when `semgrep: true` (registry ID or local rules file) |
 | `summary` | No | `true` | Append report to job summary |
 | `comment` | No | `true` | Post/update PR comment |
 | `artifact` | No | `true` | Upload report as workflow artifact |
@@ -229,7 +231,26 @@ Any tool that emits **SARIF v2.1.0** works — Semgrep, CodeQL, golangci-lint,
 ESLint, Bandit, and more. ODS becomes the governance layer over the scanners
 you already trust.
 
-### Example: Semgrep → ODS
+### Zero-setup: let the Action run Semgrep
+
+Set `semgrep: true` and the Action installs and runs Semgrep for you, then
+merges its findings — no extra steps:
+
+```yaml
+- uses: actions/checkout@v7
+  with:
+    fetch-depth: 0
+- uses: open-delivery-spec/validate-action@v1
+  with:
+    semgrep: true
+    # semgrep-config: p/ci   # optional: a registry ruleset or a local rules file
+```
+
+### Bring your own SARIF
+
+Prefer to control the scan yourself (custom rules, caching, another tool)?
+Produce a SARIF file in an earlier step and pass its path as `sarif:` — this
+takes precedence over `semgrep:`.
 
 ```yaml
 - uses: actions/checkout@v7

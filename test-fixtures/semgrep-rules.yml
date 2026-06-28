@@ -1,0 +1,6 @@
+rules:
+  - id: ods-test-eval-call
+    languages: [python]
+    severity: ERROR
+    message: Use of eval() on untrusted input is dangerous.
+    pattern: eval(...)

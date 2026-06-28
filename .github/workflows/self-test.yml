@@ -95,6 +95,20 @@ jobs:
           grep -q "dangerous-exec-command" ods-report/analyze.json
           echo "External SARIF finding merged into analysis ✓"
 
+      - name: "Pipeline with built-in Semgrep (semgrep: true)"
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          semgrep: "true"
+          semgrep-config: test-fixtures/semgrep-rules.yml
+          artifact-name: ods-report-semgrep
+          comment: "false"
+
+      - name: Verify auto-Semgrep findings were merged
+        run: |
+          grep -q "ods-test-eval-call" ods-report/analyze.json
+          echo "Auto-Semgrep finding merged into analysis ✓"
+
       - name: Pipeline without PR comment or artifact
         uses: ./
         with:
