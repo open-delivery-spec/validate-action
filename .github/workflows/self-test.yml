@@ -17,6 +17,13 @@ jobs:
 
   ods-pipeline:
     runs-on: ubuntu-latest
+    # The action installs the CLI via `go install ...@main`. Resolve the main
+    # tip directly from the source forge instead of the module proxy, whose
+    # branch→version cache lags fresh merges — otherwise a self-test exercising
+    # a just-merged CLI change installs the stale pre-change binary.
+    env:
+      GOPROXY: direct
+      GOSUMDB: "off"
     steps:
       - uses: actions/checkout@v7
         with:
