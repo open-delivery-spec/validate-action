@@ -1,0 +1,71 @@
+name: Update pinned CLI
+
+# Opens a PR bumping the default `cli-ref` in action.yml whenever the ODS CLI
+# publishes a newer release. Self-contained (git + gh) — no Renovate app or
+# external action required. Runs weekly and can be triggered manually.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare pinned CLI with latest release
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest=$(gh api repos/open-delivery-spec/cli/releases/latest -q .tag_name)
+          current=$(sed -nE "s/.*default: '(v[0-9]+\.[0-9]+\.[0-9]+)'.*/\1/p" action.yml | head -1)
+          echo "latest=$latest"   >> "$GITHUB_OUTPUT"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          if [ -n "$latest" ] && [ "$latest" != "$current" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "CLI: current=$current latest=$latest"
+
+      - name: Open bump PR
+        if: steps.v.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST: ${{ steps.v.outputs.latest }}
+          CURRENT: ${{ steps.v.outputs.current }}
+        run: |
+          set -euo pipefail
+          branch="chore/bump-cli-ref-${LATEST}"
+
+          # Idempotent: skip if a bump branch for this version already exists.
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "Branch $branch already exists — nothing to do."
+            exit 0
+          fi
+
+          # Update the pin in action.yml and any README references.
+          sed -i -E "s/(default: ')v[0-9]+\.[0-9]+\.[0-9]+(')/\1${LATEST}\2/" action.yml
+          sed -i "s/${CURRENT}/${LATEST}/g" README.md
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "chore: bump default cli-ref to ${LATEST}"
+          git push -u origin "$branch"
+
+          gh pr create --base main --head "$branch" \
+            --title "chore: bump default cli-ref to ${LATEST}" \
+            --body "Automated by the \`Update pinned CLI\` workflow: \`open-delivery-spec/cli\` released **${LATEST}** (pin was \`${CURRENT}\`).
+
+          Review and merge to update the Action's default CLI version.
+
+          > Note: PRs opened by \`GITHUB_TOKEN\` don't auto-trigger \`self-test\`. Push an empty commit or use *Update branch* to run CI before merging (or wire this workflow to a PAT secret)."
