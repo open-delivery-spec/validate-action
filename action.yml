@@ -109,6 +109,7 @@ inputs:
       ODS CLI version, tag, or commit to install. Defaults to a pinned stable
       release for reproducible runs; set to `main` to track the latest.
     required: false
+    # renovate: datasource=github-releases depName=open-delivery-spec/cli
     default: 'v0.3.1'
 
 outputs:

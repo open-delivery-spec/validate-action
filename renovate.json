@@ -1,0 +1,15 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Only auto-bump the pinned ODS CLI version in action.yml. GitHub Actions `uses:` refs are handled by Dependabot, so Renovate's other managers are disabled to avoid duplicate PRs.",
+  "enabledManagers": ["custom.regex"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Bump the cli-ref default (marked with a renovate comment) from open-delivery-spec/cli releases",
+      "fileMatch": ["^action\\.yml$"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+default:\\s*'(?<currentValue>v[^']+)'"
+      ]
+    }
+  ]
+}
