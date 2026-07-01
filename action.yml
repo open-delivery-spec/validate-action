@@ -105,9 +105,11 @@ inputs:
     default: ${{ github.token }}
 
   cli-ref:
-    description: 'ODS CLI version, tag, or commit to install'
+    description: >-
+      ODS CLI version, tag, or commit to install. Defaults to a pinned stable
+      release for reproducible runs; set to `main` to track the latest.
     required: false
-    default: 'main'
+    default: 'v0.3.0'
 
 outputs:
   result:

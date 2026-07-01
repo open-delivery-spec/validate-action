@@ -87,15 +87,15 @@ Pin the Action to a major tag so you receive fixes without breaking changes:
 # - uses: open-delivery-spec/validate-action@v1.0.0   # exact release, fully reproducible
 ```
 
-> **Note on the CLI it installs.** By default the Action installs the ODS CLI
-> from the `main` branch (`cli-ref: main`) so you always get the latest
-> detection and analysis improvements. For fully reproducible builds — e.g.
-> regulated or air-gapped pipelines — pin the CLI to a tag or commit:
+> **Note on the CLI it installs.** By default the Action installs a **pinned
+> stable release** of the ODS CLI (`cli-ref: v0.3.0`) so runs are reproducible.
+> To always track the latest detection and analysis improvements, set it to
+> `main` (or any tag/commit):
 >
 > ```yaml
 > - uses: open-delivery-spec/validate-action@v1
 >   with:
->     cli-ref: v0.2.3   # or a commit SHA
+>     cli-ref: main   # latest; or a specific tag/commit like v0.3.0
 > ```
 
 ---
@@ -195,7 +195,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `artifact-name` | No | `ods-report` | Uploaded artifact name |
 | `artifact-retention-days` | No | `30` | Artifact retention period |
 | `github-token` | No | `${{ github.token }}` | Token for PR comments |
-| `cli-ref` | No | `main` | ODS CLI version/tag/commit |
+| `cli-ref` | No | `v0.3.0` | ODS CLI version/tag/commit (`main` for latest) |
 
 ## Outputs
 
