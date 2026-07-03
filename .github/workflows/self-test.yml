@@ -87,6 +87,13 @@ jobs:
         with:
           diff-base: HEAD~1
           sarif: test-fixtures/sample-semgrep.sarif
+          # This step asserts the finding is *merged*, not that it blocks —
+          # enforcement has its own step below. Without an explicit permissive
+          # policy the default gate blocks whenever the PR diff happens to
+          # contain code files: the fixture's high finding explodes the
+          # per-KLOC defect density on small diffs, so the step would fail
+          # based on what files a PR touches.
+          policy: test-fixtures/policy-allow-all.rego
           artifact-name: ods-report-sarif
           comment: "false"
 
@@ -118,6 +125,8 @@ jobs:
           diff-base: HEAD~1
           semgrep: "true"
           semgrep-config: test-fixtures/semgrep-rules.yml
+          # Same as the SARIF step above: this asserts merging, not blocking.
+          policy: test-fixtures/policy-allow-all.rego
           artifact-name: ods-report-semgrep
           comment: "false"
 
@@ -158,3 +167,22 @@ jobs:
           artifact-name: ods-report-policy
           comment: "false"
         continue-on-error: true
+
+      - name: "Pipeline with review routing (tier: elevated)"
+        id: routing
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          policy: test-fixtures/policy-route-elevated.rego
+          # review_tier needs a CLI newer than the pinned release; drop this
+          # override once a release containing it is pinned.
+          cli-ref: main
+          review-routing: "true"
+          artifact-name: ods-report-routing
+          comment: "false"
+
+      - name: Verify review tier routed and exposed
+        run: |
+          test "${{ steps.routing.outputs.review-tier }}" = "elevated"
+          grep -q '"review_tier": "elevated"' ods-report/check.json
+          echo "Review tier routed and exposed ✓"
