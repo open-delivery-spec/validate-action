@@ -420,3 +420,28 @@ class TestBuildHtml:
         }})
         out = gr.build_html(**kw)
         assert "63%" in out
+
+
+# ── review_tier plumbing ──────────────────────────────────────────────────────
+
+class TestReviewTier:
+    def test_tier_from_check_json_reaches_output_and_markdown(self):
+        check = {"allowed": True, "review_tier": "auto", "denials": [], "warnings": []}
+        _, report, md, gh = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert "review_tier=auto" in gh
+        assert report["policy"]["review_tier"] == "auto"
+        assert "**Review Tier:**" in md and "auto" in md
+
+    def test_missing_tier_defaults_to_standard(self):
+        _, report, md, gh = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert "review_tier=standard" in gh
+        assert report["policy"]["review_tier"] == "standard"
+
+    def test_blocked_pr_hides_tier_in_markdown(self):
+        check = {"allowed": False, "review_tier": "auto",
+                 "denials": ["critical issue"], "warnings": []}
+        _, report, md, gh = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        # Output still carries the raw value for tooling…
+        assert "review_tier=auto" in gh
+        # …but a blocked PR is never routed in the human-facing summary.
+        assert "**Review Tier:**" not in md

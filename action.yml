@@ -79,6 +79,23 @@ inputs:
     required: false
     default: 'true'
 
+  review-routing:
+    description: >-
+      Act on the policy's review_tier verdict: label the PR
+      (ods:review/auto|standard|elevated) and, for elevated, request the
+      reviewers listed in elevated-reviewers. Requires a policy that defines
+      review_tier and a CLI version that reports it. Routing is advisory and
+      never fails the run.
+    required: false
+    default: 'false'
+
+  elevated-reviewers:
+    description: >-
+      Comma-separated GitHub usernames to request as reviewers when the
+      review tier is "elevated" (used only with review-routing: true).
+    required: false
+    default: ''
+
   artifact:
     description: 'Upload the generated ODS report directory as a workflow artifact'
     required: false
@@ -127,6 +144,9 @@ outputs:
   policy-allowed:
     description: 'Whether the OPA policy allowed the change'
     value: ${{ steps.ods.outputs.policy_allowed }}
+  review-tier:
+    description: 'Policy review-routing verdict: auto | standard | elevated'
+    value: ${{ steps.ods.outputs.review_tier }}
 
 runs:
   using: composite
@@ -420,3 +440,52 @@ runs:
           "$URL" \
           --data-binary "@/tmp/ods-comment.json" \
           >/dev/null 2>/dev/null || echo "::warning::Unable to create or update ODS PR comment."
+
+    - name: Review routing
+      # Runs only when the gate passed — deny wins, a blocked PR is never
+      # routed. Routing is advisory: every failure here is a warning, never a
+      # failed run.
+      if: inputs.review-routing == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        TIER: ${{ steps.ods.outputs.review_tier }}
+        PR_URL: ${{ github.event.pull_request.html_url }}
+        ELEVATED_REVIEWERS: ${{ inputs.elevated-reviewers }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "${GH_TOKEN:-}" ]; then
+          echo "::warning::Skipping review routing because github-token is empty."
+          exit 0
+        fi
+
+        TIER="${TIER:-standard}"
+        echo "Review tier: $TIER"
+
+        declare -A COLORS=([auto]="2da44e" [standard]="0969da" [elevated]="d4a72c")
+
+        # Ensure the tier labels exist, then converge the PR to exactly one.
+        for t in auto standard elevated; do
+          gh label create "ods:review/$t" \
+            --color "${COLORS[$t]}" \
+            --description "ODS review tier: $t" \
+            --force >/dev/null 2>&1 || true
+        done
+        for t in auto standard elevated; do
+          [ "$t" = "$TIER" ] && continue
+          gh pr edit "$PR_URL" --remove-label "ods:review/$t" >/dev/null 2>&1 || true
+        done
+        gh pr edit "$PR_URL" --add-label "ods:review/$TIER" >/dev/null 2>&1 || \
+          echo "::warning::Could not apply review-tier label (insufficient token permissions?)."
+
+        # Elevated tier: request the configured reviewers.
+        if [ "$TIER" = "elevated" ] && [ -n "${ELEVATED_REVIEWERS:-}" ]; then
+          IFS=',' read -ra REVIEWERS <<< "$ELEVATED_REVIEWERS"
+          for r in "${REVIEWERS[@]}"; do
+            r="$(echo "$r" | tr -d '[:space:]')"
+            [ -z "$r" ] && continue
+            gh pr edit "$PR_URL" --add-reviewer "$r" >/dev/null 2>&1 || \
+              echo "::warning::Could not request review from '$r' (not a collaborator, or the PR author)."
+          done
+        fi

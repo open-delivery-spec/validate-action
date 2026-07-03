@@ -190,6 +190,8 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `report-since` | No | `90 days ago` | History window for the attribution digest (any git `--since` expression) |
 | `summary` | No | `true` | Append report to job summary |
 | `comment` | No | `true` | Post/update PR comment |
+| `review-routing` | No | `false` | Label the PR with its review tier; request reviewers for `elevated` ([details](#review-routing-spend-review-attention-where-it-matters)) |
+| `elevated-reviewers` | No | — | Comma-separated usernames to request when the tier is `elevated` |
 | `artifact` | No | `true` | Upload report as workflow artifact |
 | `output-dir` | No | `ods-report` | Report output directory |
 | `artifact-name` | No | `ods-report` | Uploaded artifact name |
@@ -206,6 +208,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `ai-confidence` | Detection confidence (0.0–1.0) |
 | `tech-debt-delta` | Technical debt delta score |
 | `policy-allowed` | `true` \| `false` |
+| `review-tier` | `auto` \| `standard` \| `elevated` — the policy's review-routing verdict ([details](#review-routing-spend-review-attention-where-it-matters)) |
 
 ## Generated Artifacts
 
@@ -384,6 +387,51 @@ Available policy input fields:
 | `input.test_coverage` | float | Test coverage ratio (0.0–1.0) |
 | `input.branch` | string | Branch name |
 | `input.changed_files` | array | Changed file paths in the diff |
+
+---
+
+## Review Routing: Spend Review Attention Where It Matters
+
+The real bottleneck in AI-assisted delivery is not review speed — it is
+attention allocation. Your policy can answer a second question beyond
+allow/deny: **how much human attention does this PR need?** Define a
+`review_tier` rule (`auto` / `standard` / `elevated`) in your Rego policy and
+the action will surface and act on it:
+
+```yaml
+- uses: open-delivery-spec/validate-action@v1
+  id: ods
+  with:
+    review-routing: "true"
+    elevated-reviewers: "alice,bob"   # requested when tier = elevated
+    cli-ref: main                     # review_tier needs a CLI newer than the pinned release
+```
+
+With `review-routing: true` the action labels the PR
+(`ods:review/auto|standard|elevated`) and, for `elevated`, requests the
+configured reviewers. Semantics: **deny always wins** — a blocked PR is never
+routed; routing is advisory and never fails the run. Policies without a
+`review_tier` rule default to `standard`.
+
+The `auto` tier is deliberately **not** wired to merge anything. If you want
+low-risk PRs to merge on their own, opt in explicitly with a follow-up step —
+the gate has already passed by the time it runs (a blocked PR fails the job
+before this step):
+
+```yaml
+- name: Auto-merge low-risk PRs
+  if: steps.ods.outputs.review-tier == 'auto'
+  env:
+    GH_TOKEN: ${{ github.token }}
+  run: gh pr merge --auto --squash "${{ github.event.pull_request.html_url }}"
+```
+
+Requires "Allow auto-merge" in the repository settings and branch protection
+rules you trust. Merging is irreversible — that decision stays in your
+workflow, not inside this action.
+
+See the [CLI docs](https://github.com/open-delivery-spec/cli#review-routing-review_tier)
+for the `review_tier` Rego contract and example rules.
 
 ---
 

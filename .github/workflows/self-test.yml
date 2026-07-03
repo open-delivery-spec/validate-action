@@ -158,3 +158,22 @@ jobs:
           artifact-name: ods-report-policy
           comment: "false"
         continue-on-error: true
+
+      - name: "Pipeline with review routing (tier: elevated)"
+        id: routing
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          policy: test-fixtures/policy-route-elevated.rego
+          # review_tier needs a CLI newer than the pinned release; drop this
+          # override once a release containing it is pinned.
+          cli-ref: main
+          review-routing: "true"
+          artifact-name: ods-report-routing
+          comment: "false"
+
+      - name: Verify review tier routed and exposed
+        run: |
+          test "${{ steps.routing.outputs.review-tier }}" = "elevated"
+          grep -q '"review_tier": "elevated"' ods-report/check.json
+          echo "Review tier routed and exposed ✓"

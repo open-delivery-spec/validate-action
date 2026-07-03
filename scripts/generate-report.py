@@ -73,6 +73,8 @@ def main():
     verdict = score.get("verdict", "neutral")
     recommendation = score.get("recommendation", "")
     policy_allowed = check.get("allowed", True)
+    # Absent on policies (or CLIs) without review routing — treat as standard.
+    review_tier = check.get("review_tier") or "standard"
     denials = check.get("denials", [])
     warnings_list = check.get("warnings", [])
     issues = analyze.get("issues", [])
@@ -106,6 +108,7 @@ def main():
             f.write(f"ai_confidence={ai_confidence}\n")
             f.write(f"tech_debt_delta={tech_debt}\n")
             f.write(f"policy_allowed={'true' if policy_allowed else 'false'}\n")
+            f.write(f"review_tier={review_tier}\n")
             f.write(f"detect_error={'true' if detect_error else 'false'}\n")
 
     # Combined JSON report
@@ -131,6 +134,7 @@ def main():
         },
         "policy": {
             "allowed": policy_allowed,
+            "review_tier": review_tier,
             "denials": denials,
             "warnings": warnings_list,
         },
@@ -150,6 +154,7 @@ def main():
         verdict=verdict,
         recommendation=recommendation,
         policy_allowed=policy_allowed,
+        review_tier=review_tier,
         evidence=evidence,
         analyze_summary=analyze_summary,
         issues=issues,
@@ -217,8 +222,12 @@ def build_markdown(**kw):
         f"**AI Detected:** {ai_label} (confidence: {kw['ai_confidence']*100:.0f}%)  ",
         f"**Tech Debt Delta:** {kw['tech_debt']:+.1f} ({kw['verdict']})  ",
         f"**Policy:** {policy_label}  ",
-        "",
     ]
+    if kw["policy_allowed"]:
+        tier = kw.get("review_tier", "standard")
+        tier_icon = {"auto": "\U0001f7e2", "standard": "\U0001f535", "elevated": "\U0001f7e0"}.get(tier, "")
+        lines.append(f"**Review Tier:** {tier_icon} {tier}  ")
+    lines.append("")
 
     # Detection
     lines.append("### \U0001f50d Detection")
