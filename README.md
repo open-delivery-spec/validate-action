@@ -88,14 +88,14 @@ Pin the Action to a major tag so you receive fixes without breaking changes:
 ```
 
 > **Note on the CLI it installs.** By default the Action installs a **pinned
-> stable release** of the ODS CLI (`cli-ref: v0.3.1`) so runs are reproducible.
+> stable release** of the ODS CLI (`cli-ref: v0.4.0`) so runs are reproducible.
 > To always track the latest detection and analysis improvements, set it to
 > `main` (or any tag/commit):
 >
 > ```yaml
 > - uses: open-delivery-spec/validate-action@v1
 >   with:
->     cli-ref: main   # latest; or a specific tag/commit like v0.3.1
+>     cli-ref: main   # latest; or a specific tag/commit like v0.4.0
 > ```
 
 ---
@@ -197,7 +197,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `artifact-name` | No | `ods-report` | Uploaded artifact name |
 | `artifact-retention-days` | No | `30` | Artifact retention period |
 | `github-token` | No | `${{ github.token }}` | Token for PR comments |
-| `cli-ref` | No | `v0.3.1` | ODS CLI version/tag/commit (`main` for latest) |
+| `cli-ref` | No | `v0.4.0` | ODS CLI version/tag/commit (`main` for latest) |
 
 ## Outputs
 
@@ -404,7 +404,6 @@ the action will surface and act on it:
   with:
     review-routing: "true"
     elevated-reviewers: "alice,bob"   # requested when tier = elevated
-    cli-ref: main                     # review_tier needs a CLI newer than the pinned release
 ```
 
 With `review-routing: true` the action labels the PR
