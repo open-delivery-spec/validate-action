@@ -62,10 +62,13 @@ jobs:
           git commit -am "chore: bump default cli-ref to ${LATEST}"
           git push -u origin "$branch"
 
-          gh pr create --base main --head "$branch" \
+          if ! gh pr create --base main --head "$branch" \
             --title "chore: bump default cli-ref to ${LATEST}" \
             --body "Automated by the \`Update pinned CLI\` workflow: \`open-delivery-spec/cli\` released **${LATEST}** (pin was \`${CURRENT}\`).
 
           Review and merge to update the Action's default CLI version.
 
-          > Note: PRs opened by \`GITHUB_TOKEN\` don't auto-trigger \`self-test\`. Push an empty commit or use *Update branch* to run CI before merging (or wire this workflow to a PAT secret)."
+          > Note: PRs opened by \`GITHUB_TOKEN\` don't auto-trigger \`self-test\`. Push an empty commit or use *Update branch* to run CI before merging (or wire this workflow to a PAT secret)."; then
+            echo "::error::Could not open the bump PR. If the error above says 'GitHub Actions is not permitted to create or approve pull requests', enable that permission under Settings → Actions → General → Workflow permissions. The branch '$branch' is already pushed — the PR can also be opened manually from it."
+            exit 1
+          fi

@@ -404,7 +404,6 @@ the action will surface and act on it:
   with:
     review-routing: "true"
     elevated-reviewers: "alice,bob"   # requested when tier = elevated
-    cli-ref: main                     # review_tier needs a CLI newer than the pinned release
 ```
 
 With `review-routing: true` the action labels the PR
