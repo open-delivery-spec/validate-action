@@ -183,3 +183,24 @@ jobs:
           test "${{ steps.routing.outputs.review-tier }}" = "elevated"
           grep -q '"review_tier": "elevated"' ods-report/check.json
           echo "Review tier routed and exposed ✓"
+
+      - name: Pipeline with flag-like tokens in PR body (argument injection)
+        id: flagbody
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          pr-body: |
+            ## Notes
+            Repair with `git push -f origin v1` or --force if needed.
+            -f --json --policy /dev/null
+            ## AI Disclosure
+            - [x] This PR contains AI-generated code
+            - AI Tool: Claude
+          artifact-name: ods-report-flagbody
+          comment: "false"
+
+      - name: Verify flag-like PR body did not break detection
+        run: |
+          grep -vq "_ods_detect_error" ods-report/detect.json
+          test "${{ steps.flagbody.outputs.ai-detected }}" = "true"
+          echo "PR body with flag-like tokens handled safely ✓"
