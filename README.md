@@ -112,6 +112,8 @@ ODS reads `Co-Authored-By` trailers that AI tools already emit automatically:
 
 No configuration required — if your team uses any of these tools, AI attribution is detected automatically from the commits.
 
+The [Linux kernel coding-assistants convention](https://docs.kernel.org/process/coding-assistants.html) is recognized as an equally strong disclosure — `Assisted-by: Claude:claude-3-opus coccinelle` attributes the commit to `Claude` with the model version surfaced in the evidence. (Newer than the currently pinned CLI release: set `cli-ref: main` until the next release is pinned.)
+
 ODS also reads supplemental ODS-specific trailer fields (`AI-assisted: true`, `AI-tool: name`) for teams that add them, but `Co-Authored-By` is sufficient on its own.
 
 This is **attribution from signals the tools volunteer**, not forensic detection: an author who strips the trailer can evade it, and the diff heuristics are only a low-confidence fallback. ODS surfaces what AI tools disclose — it does not claim to unmask code that hides it.
