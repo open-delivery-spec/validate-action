@@ -219,24 +219,29 @@ runs:
         set -euo pipefail
         mkdir -p "$ODS_OUTPUT_DIR"
 
-        # Build detect flags
-        DETECT_FLAGS="--diff-base $ODS_DIFF_BASE --commits $ODS_COMMITS"
+        # Build detect args as an ARRAY expanded with quotes. Never splice the
+        # PR body into a flat string: unquoted expansion word-splits it, so any
+        # flag-looking token an author writes in a PR description (e.g. a
+        # `git push -f` snippet) becomes a CLI flag — breaking detection and
+        # handing PR authors an argument-injection vector. printf %q does NOT
+        # protect a string that is expanded without eval.
+        DETECT_ARGS=(--diff-base "$ODS_DIFF_BASE" --commits "$ODS_COMMITS")
         # Export diff-base for CLI commands that do not yet accept --diff-base
         export ODS_DIFF_BASE="$ODS_DIFF_BASE"
 
         PR_BODY_SOURCE=""
         if [ -n "${ODS_PR_BODY:-}" ]; then
-          DETECT_FLAGS="$DETECT_FLAGS --pr-body $(printf '%q' "$ODS_PR_BODY")"
+          DETECT_ARGS+=(--pr-body "$ODS_PR_BODY")
           PR_BODY_SOURCE="flag"
         elif [ -n "${ODS_PR_BODY_FILE:-}" ] && [ -f "$ODS_PR_BODY_FILE" ]; then
-          DETECT_FLAGS="$DETECT_FLAGS --pr-file $ODS_PR_BODY_FILE"
+          DETECT_ARGS+=(--pr-file "$ODS_PR_BODY_FILE")
           ODS_PR_BODY="$(cat "$ODS_PR_BODY_FILE")"
           PR_BODY_SOURCE="file"
         elif [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
           # Extract PR body from GitHub event using jq
           PR_BODY=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" 2>/dev/null || echo "")
           if [ -n "$PR_BODY" ]; then
-            DETECT_FLAGS="$DETECT_FLAGS --pr-body $(printf '%q' "$PR_BODY")"
+            DETECT_ARGS+=(--pr-body "$PR_BODY")
             ODS_PR_BODY="$PR_BODY"
             PR_BODY_SOURCE="event"
           fi
@@ -250,7 +255,7 @@ runs:
           BRANCH=$(git branch --show-current 2>/dev/null || echo "")
         fi
         if [ -n "$BRANCH" ]; then
-          DETECT_FLAGS="$DETECT_FLAGS --branch $BRANCH"
+          DETECT_ARGS+=(--branch "$BRANCH")
           # Export both env var names for CLI compatibility
           export ODS_BRANCH="$BRANCH"
           export ODS_BRANCH_NAME="$BRANCH"
@@ -259,7 +264,7 @@ runs:
         echo "::group::① Detect — AI Code Detection"
         DETECT_JSON="$ODS_OUTPUT_DIR/detect.json"
         set +e
-        ods detect --json $DETECT_FLAGS > "$DETECT_JSON" 2>"$ODS_OUTPUT_DIR/detect.stderr"
+        ods detect --json "${DETECT_ARGS[@]}" > "$DETECT_JSON" 2>"$ODS_OUTPUT_DIR/detect.stderr"
         DETECT_EXIT=$?
         set -e
         # ods detect exits non-zero for BOTH errors AND high-confidence positive results.
