@@ -3,6 +3,11 @@ name: Move Major Tag
 on:
   release:
     types: [published, edited]
+  # Manual repair path: moves v1 to the default branch tip. Needed when
+  # releases stall while main advances — v1 sat on v0.2.1 while main gained
+  # the v0.4.0 CLI pin, SARIF gate, and review routing, because no release
+  # was cut after v0.2.1 and this workflow therefore never fired.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,22 +20,32 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Move v1 tag to latest release
+      - name: Move v1 tag
         run: |
-          TAG_VERSION="${{ github.event.release.tag_name }}"
-          echo "Release tag: $TAG_VERSION"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ github.sha }}"
+            echo "Manual repair: moving v1 to the dispatched ref ($TARGET)"
+          else
+            TAG_VERSION="${{ github.event.release.tag_name }}"
+            echo "Release tag: $TAG_VERSION"
 
-          # v1 is the only major tag. Any v0.x.x or v1.x.x release updates it.
-          # Users reference validate-action@v1 to always get the latest.
-          if ! echo "$TAG_VERSION" | grep -qE '^v[01]\.'; then
-            echo "Skipping: only v0.x.x and v1.x.x releases update the v1 tag"
-            exit 0
+            # v1 is the only major tag. Any v0.x.x or v1.x.x release updates it.
+            # Users reference validate-action@v1 to always get the latest.
+            if ! echo "$TAG_VERSION" | grep -qE '^v[01]\.'; then
+              echo "Skipping: only v0.x.x and v1.x.x releases update the v1 tag"
+              exit 0
+            fi
+            if [ "${{ github.event.release.prerelease }}" = "true" ]; then
+              echo "Skipping: prereleases do not move the v1 tag"
+              exit 0
+            fi
+            TARGET="${{ github.sha }}"
+            echo "Moving v1 tag to $TAG_VERSION ($TARGET)"
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          echo "Moving v1 tag to $TAG_VERSION (${{ github.sha }})"
-          git tag -f v1 "${{ github.sha }}"
+          git tag -f v1 "$TARGET"
           git push origin v1 --force
-          echo "✅ v1 tag updated to point to $TAG_VERSION"
+          echo "✅ v1 tag now points to $TARGET"
