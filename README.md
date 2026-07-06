@@ -88,14 +88,14 @@ Pin the Action to a major tag so you receive fixes without breaking changes:
 ```
 
 > **Note on the CLI it installs.** By default the Action installs a **pinned
-> stable release** of the ODS CLI (`cli-ref: v0.4.0`) so runs are reproducible.
+> stable release** of the ODS CLI (`cli-ref: v0.5.0`) so runs are reproducible.
 > To always track the latest detection and analysis improvements, set it to
 > `main` (or any tag/commit):
 >
 > ```yaml
 > - uses: open-delivery-spec/validate-action@v1
 >   with:
->     cli-ref: main   # latest; or a specific tag/commit like v0.4.0
+>     cli-ref: main   # latest; or a specific tag/commit like v0.5.0
 > ```
 
 ---
@@ -112,7 +112,7 @@ ODS reads `Co-Authored-By` trailers that AI tools already emit automatically:
 
 No configuration required — if your team uses any of these tools, AI attribution is detected automatically from the commits.
 
-The [Linux kernel coding-assistants convention](https://docs.kernel.org/process/coding-assistants.html) is recognized as an equally strong disclosure — `Assisted-by: Claude:claude-3-opus coccinelle` attributes the commit to `Claude` with the model version surfaced in the evidence. (Newer than the currently pinned CLI release: set `cli-ref: main` until the next release is pinned.)
+The [Linux kernel coding-assistants convention](https://docs.kernel.org/process/coding-assistants.html) is recognized as an equally strong disclosure — `Assisted-by: Claude:claude-3-opus coccinelle` attributes the commit to `Claude` with the model version surfaced in the evidence.
 
 ODS also reads supplemental ODS-specific trailer fields (`AI-assisted: true`, `AI-tool: name`) for teams that add them, but `Co-Authored-By` is sufficient on its own.
 
@@ -199,7 +199,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `artifact-name` | No | `ods-report` | Uploaded artifact name |
 | `artifact-retention-days` | No | `30` | Artifact retention period |
 | `github-token` | No | `${{ github.token }}` | Token for PR comments |
-| `cli-ref` | No | `v0.4.0` | ODS CLI version/tag/commit (`main` for latest) |
+| `cli-ref` | No | `v0.5.0` | ODS CLI version/tag/commit (`main` for latest) |
 
 ## Outputs
 

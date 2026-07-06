@@ -126,7 +126,7 @@ inputs:
       ODS CLI version, tag, or commit to install. Defaults to a pinned stable
       release for reproducible runs; set to `main` to track the latest.
     required: false
-    default: 'v0.4.0'
+    default: 'v0.5.0'
 
 outputs:
   result:
