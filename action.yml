@@ -195,6 +195,16 @@ runs:
         fi
         echo "::endgroup::"
 
+    - name: Fetch git-ai authorship notes (best effort)
+      shell: bash
+      run: |
+        # git-ai (git-ai-project/git-ai) records line-level AI authorship
+        # under refs/notes/ai; the CLI reads it as the highest-fidelity
+        # attribution source. CI checkouts don't fetch notes by default, so
+        # pull them here. Best effort: absence is the normal case on repos
+        # not using git-ai, and a failed fetch must never fail the gate.
+        git fetch origin '+refs/notes/ai:refs/notes/ai' 2>/dev/null || true
+
     - name: Run ODS Pipeline
       id: ods
       shell: bash
