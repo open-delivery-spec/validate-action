@@ -1,0 +1,29 @@
+.github/workflows/ods-validate.yml
+  s_78ef1d7e0149aa::t_a082ced3c7c3a3 19,30
+action.yml
+  s_78ef1d7e0149aa::t_d4c3e3cebb3fe0 155,389
+.github/workflows/labeler.yml
+  s_78ef1d7e0149aa::t_d5d1679799e781 14
+.github/workflows/move-major-tag.yml
+  s_78ef1d7e0149aa::t_3fa66961ba0d5a 19
+.github/workflows/update-cli-ref.yml
+  s_78ef1d7e0149aa::t_4532d0e5b3ab6b 20
+.github/workflows/self-test.yml
+  s_78ef1d7e0149aa::t_969cdf4809e3ee 12,28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "75bd9bf370b3cd4f6bdcd01807c2b8ea95c119e0",
+  "prompts": {},
+  "sessions": {
+    "s_78ef1d7e0149aa": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019f3e6d-2445-73c1-be8f-394e1040bd76",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "shenxianpeng <xianpeng.shen@gmail.com>"
+    }
+  }
+}
