@@ -16,7 +16,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
@@ -27,7 +27,7 @@ jobs:
           commit-check --message --branch
 
       - name: ODS AI code quality gate
-        uses: open-delivery-spec/validate-action@v1
+        uses: open-delivery-spec/validate-action@d7a0c35ee9f3ba18249178bd01a295a68774627b # v1
         with:
           diff-base: ${{ github.event.pull_request.base.sha || 'origin/main' }}
           branch: ${{ github.head_ref }}
