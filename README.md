@@ -88,14 +88,14 @@ Pin the Action to a major tag so you receive fixes without breaking changes:
 ```
 
 > **Note on the CLI it installs.** By default the Action installs a **pinned
-> stable release** of the ODS CLI (`cli-ref: v0.5.0`) so runs are reproducible.
+> stable release** of the ODS CLI (`cli-ref: v0.6.0`) so runs are reproducible.
 > To always track the latest detection and analysis improvements, set it to
 > `main` (or any tag/commit):
 >
 > ```yaml
 > - uses: open-delivery-spec/validate-action@v1
 >   with:
->     cli-ref: main   # latest; or a specific tag/commit like v0.5.0
+>     cli-ref: main   # latest; or a specific tag/commit like v0.6.0
 > ```
 
 ---
@@ -114,7 +114,7 @@ No configuration required — if your team uses any of these tools, AI attributi
 
 The [Linux kernel coding-assistants convention](https://docs.kernel.org/process/coding-assistants.html) is recognized as an equally strong disclosure — `Assisted-by: Claude:claude-3-opus coccinelle` attributes the commit to `Claude` with the model version surfaced in the evidence.
 
-Repos using [git-ai](https://github.com/git-ai-project/git-ai) get the highest-fidelity signal: the Action fetches its `refs/notes/ai` authorship logs automatically (best effort) and the CLI *measures* per-file AI lines from them instead of estimating — with the agent and model named in the evidence. Requires a CLI release newer than v0.5.0 (`cli-ref: main` until then); repos without git-ai are unaffected.
+Repos using [git-ai](https://github.com/git-ai-project/git-ai) get the highest-fidelity signal: the Action fetches its `refs/notes/ai` authorship logs automatically (best effort) and the CLI *measures* per-file AI lines from them instead of estimating — with the agent and model named in the evidence. Requires a CLI release newer than v0.6.0 (`cli-ref: main` until then); repos without git-ai are unaffected.
 
 ODS also reads supplemental ODS-specific trailer fields (`AI-assisted: true`, `AI-tool: name`) for teams that add them, but `Co-Authored-By` is sufficient on its own.
 
@@ -201,7 +201,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `artifact-name` | No | `ods-report` | Uploaded artifact name |
 | `artifact-retention-days` | No | `30` | Artifact retention period |
 | `github-token` | No | `${{ github.token }}` | Token for PR comments |
-| `cli-ref` | No | `v0.5.0` | ODS CLI version/tag/commit (`main` for latest) |
+| `cli-ref` | No | `v0.6.0` | ODS CLI version/tag/commit (`main` for latest) |
 
 ## Outputs
 
