@@ -16,7 +16,7 @@ AI writes code faster than ever, but AI code increases technical debt in predict
 | **Hallucinated APIs** | AI invents functions, packages, endpoints that don’t exist |
 | **Redundant error handling** | 3+ identical `if err != nil` blocks in the same function |
 | **Over-commenting** | 35%+ comment-to-code ratio with self-explanatory comments |
-| **Missing tests** | AI PRs average 22% test coverage vs 68% for human PRs |
+| **Missing tests** | AI-generated PRs often ship with little or no accompanying tests |
 | **Invisible AI code** | Teams can’t distinguish AI-generated from human-written changes |
 
 This Action runs the full ODS pipeline on every PR so low-quality AI code never reaches production.
@@ -48,7 +48,7 @@ jobs:
 That’s it. The Action automatically:
 
 1. **Attributes** AI-generated code (`Co-Authored-By` trailers, PR disclosure, branch names, diff heuristics)
-2. **Analyzes** code quality (5 rule categories for AI-specific defects)
+2. **Analyzes** code quality (built-in rules for AI-specific defects, plus any external analyzer via SARIF)
 3. **Scores** technical debt impact (5-dimension weighted model)
 4. **Enforces** policy (OPA Rego — optional, place at `.ods/policy.rego`)
 
@@ -114,7 +114,7 @@ No configuration required — if your team uses any of these tools, AI attributi
 
 The [Linux kernel coding-assistants convention](https://docs.kernel.org/process/coding-assistants.html) is recognized as an equally strong disclosure — `Assisted-by: Claude:claude-3-opus coccinelle` attributes the commit to `Claude` with the model version surfaced in the evidence.
 
-Repos using [git-ai](https://github.com/git-ai-project/git-ai) get the highest-fidelity signal: the Action fetches its `refs/notes/ai` authorship logs automatically (best effort) and the CLI *measures* per-file AI lines from them instead of estimating — with the agent and model named in the evidence. Requires a CLI release newer than v0.6.0 (`cli-ref: main` until then); repos without git-ai are unaffected.
+Repos using [git-ai](https://github.com/git-ai-project/git-ai) get the highest-fidelity signal: the Action fetches its `refs/notes/ai` authorship logs automatically (best effort) and the CLI *measures* per-file AI lines from them instead of estimating — with the agent and model named in the evidence. Repos without git-ai are unaffected.
 
 ODS also reads supplemental ODS-specific trailer fields (`AI-assisted: true`, `AI-tool: name`) for teams that add them, but `Co-Authored-By` is sufficient on its own.
 
