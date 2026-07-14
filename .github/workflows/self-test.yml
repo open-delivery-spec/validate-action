@@ -184,6 +184,44 @@ jobs:
           grep -q '"review_tier": "elevated"' ods-report/check.json
           echo "Review tier routed and exposed ✓"
 
+      - name: Pipeline with AI review verdict (routes elevated, never blocks)
+        id: aireview
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          # --ai-review needs a CLI newer than the pinned default.
+          cli-ref: main
+          ai-review: test-fixtures/ai-review-request-changes.json
+          artifact-name: ods-report-aireview
+          comment: "false"
+
+      - name: Verify AI review verdict routed but did not block
+        run: |
+          test "${{ steps.aireview.outputs.review-tier }}" = "elevated"
+          test "${{ steps.aireview.outputs.result }}" != "block"
+          grep -q '"ai_reviews"' ods-report/ods-report.json
+          grep -q "AI Review" ods-report/ods-summary.md
+          echo "AI review verdict routed to elevated without blocking ✓"
+
+      - name: Pipeline with AI review on a CLI that predates the flag
+        id: aireview-oldcli
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          # Pinned default cli-ref has no --ai-review: the input must be
+          # skipped with a warning, never break the gate.
+          ai-review: test-fixtures/ai-review-request-changes.json
+          artifact-name: ods-report-aireview-oldcli
+          comment: "false"
+
+      - name: Verify old CLI degraded gracefully
+        run: |
+          test "${{ steps.aireview-oldcli.outputs.result }}" != "block"
+          # The verdict never entered this run, so its report must not show
+          # one — including leftovers from the previous invocation above.
+          ! grep -q "AI Review" ods-report/ods-summary.md
+          echo "ai-review input skipped safely on a pre---ai-review CLI ✓"
+
       - name: Pipeline with flag-like tokens in PR body (argument injection)
         id: flagbody
         uses: ./

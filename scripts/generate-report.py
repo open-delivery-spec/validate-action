@@ -9,6 +9,7 @@ Appends Markdown to $GITHUB_STEP_SUMMARY if set.
 Writes step outputs to github-output-file.
 """
 
+import glob
 import html
 import json
 import os
@@ -63,6 +64,14 @@ def main():
     analyze = load_json(os.path.join(report_dir, "analyze.json"))
     score = load_json(os.path.join(report_dir, "score.json"))
     check = load_json(os.path.join(report_dir, "check.json"))
+
+    # AI reviewer verdicts (review-verdict/v1) copied in by the action when
+    # the ai-review input is set. Best effort: unparseable files are skipped.
+    ai_reviews = []
+    for path in sorted(glob.glob(os.path.join(report_dir, "ai-review-*.json"))):
+        verdict = load_json(path)
+        if verdict.get("verdict"):
+            ai_reviews.append(verdict)
 
     detect_error = detect.get("_ods_detect_error", False)
     ai_detected = detect.get("ai_generated", False)
@@ -138,6 +147,7 @@ def main():
             "denials": denials,
             "warnings": warnings_list,
         },
+        "ai_reviews": ai_reviews,
     }
 
     with open(os.path.join(report_dir, "ods-report.json"), "w") as f:
@@ -162,6 +172,7 @@ def main():
         denials=denials,
         warnings_list=warnings_list,
         files=files,
+        ai_reviews=ai_reviews,
     )
 
     summary_path = os.path.join(report_dir, "ods-summary.md")
@@ -271,6 +282,53 @@ def build_markdown(**kw):
         "",
         f"**Verdict:** {kw['verdict']} \u2014 {kw['recommendation']}",
     ])
+
+    # AI Review — semantic verdicts from AI reviewers. Advisory by default:
+    # they route review attention and never block unless the policy opts in.
+    ai_reviews = kw.get("ai_reviews") or []
+    if ai_reviews:
+        verdict_icon = {
+            "approve": "✅",
+            "request_changes": "\U0001f536",
+            "comment": "\U0001f4ac",
+        }
+        lines.extend([
+            "",
+            "### \U0001f9e0 AI Review",
+            "",
+            "| Reviewer | Verdict | Findings |",
+            "|----------|---------|----------|",
+        ])
+        for r in ai_reviews:
+            reviewer = r.get("reviewer") or {}
+            name = reviewer.get("tool", "?")
+            if reviewer.get("model"):
+                name = f"{name} ({reviewer['model']})"
+            v = r.get("verdict", "?")
+            icon = verdict_icon.get(v, "")
+            lines.append(f"| {md_cell(name)} | {icon} {md_cell(v)} | {len(r.get('findings') or [])} |")
+        findings = [
+            (r.get("reviewer", {}).get("tool", "?"), f)
+            for r in ai_reviews
+            for f in (r.get("findings") or [])
+        ]
+        if findings:
+            lines.extend([
+                "",
+                "| Reviewer | Location | Severity | Message |",
+                "|----------|----------|----------|---------|",
+            ])
+            for tool, f in findings[:10]:
+                loc = f.get("file", "?")
+                if f.get("line"):
+                    loc = f"{loc}:{f['line']}"
+                lines.append(f"| {md_cell(tool)} | {md_cell(loc)} | {md_cell(f.get('severity', '—'))} | {md_cell(f.get('message', '?'))} |")
+            if len(findings) > 10:
+                lines.append(f"| ... | ... | ... | _and {len(findings)-10} more_ |")
+        lines.extend([
+            "",
+            "_AI review verdicts are advisory: they can route extra human review, never block, unless your policy opts in._",
+        ])
 
     # Policy
     if kw["denials"]:

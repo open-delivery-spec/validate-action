@@ -56,6 +56,17 @@ inputs:
     required: false
     default: 'auto'
 
+  ai-review:
+    description: >-
+      Newline- or comma-separated paths to AI reviewer verdict files
+      (review-verdict/v1 JSON) to feed into the policy gate as
+      input.ai_reviews. Advisory by default: a request_changes verdict routes
+      extra human review, it never denies unless your policy opts in.
+      Requires a CLI with `ods check --ai-review` (cli-ref newer than v0.6.0,
+      e.g. `main`); older CLIs skip the input with a warning.
+    required: false
+    default: ''
+
   report:
     description: >-
       Append an AI attribution digest (AI vs human commit/line share over a
@@ -219,6 +230,12 @@ runs:
         ODS_COMMITS: ${{ inputs.commits }}
         ODS_POLICY: ${{ inputs.policy }}
         ODS_SARIF: ${{ inputs.sarif }}
+        ODS_AI_REVIEW: ${{ inputs.ai-review }}
+        # PR checkouts are synthetic merge commits, so `git rev-parse HEAD`
+        # never matches the head SHA reviewers stamp into their verdicts.
+        # The CLI compares against this override instead (empty on non-PR
+        # events, where plain HEAD is correct).
+        ODS_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         ODS_OUTPUT_DIR: ${{ inputs.output-dir }}
         INPUT_SUMMARY: ${{ inputs.summary }}
         GITHUB_HEAD_REF: ${{ github.head_ref }}
@@ -228,6 +245,10 @@ runs:
       run: |
         set -euo pipefail
         mkdir -p "$ODS_OUTPUT_DIR"
+        # Later invocations in the same job may reuse the output dir; drop
+        # verdicts copied by a previous run so this gate's report only shows
+        # what THIS invocation was given.
+        rm -f "$ODS_OUTPUT_DIR"/ai-review-*.json
 
         # Build detect args as an ARRAY expanded with quotes. Never splice the
         # PR body into a flat string: unquoted expansion word-splits it, so any
@@ -324,13 +345,39 @@ runs:
         echo "::endgroup::"
 
         echo "::group::④ Check — Policy Enforcement"
+        # AI reviewer verdicts (review-verdict/v1) feed the check stage only.
+        # Advisory by default: they can route extra review, never deny.
+        # Same array discipline as the PR body — verdict paths are user input.
+        AI_REVIEW_FLAGS=()
+        if [ -n "${ODS_AI_REVIEW:-}" ]; then
+          if ods check --help 2>&1 | grep -q -- '--ai-review'; then
+            VERDICT_IDX=0
+            while IFS= read -r VERDICT_FILE; do
+              # trim surrounding whitespace
+              VERDICT_FILE="${VERDICT_FILE#"${VERDICT_FILE%%[![:space:]]*}"}"
+              VERDICT_FILE="${VERDICT_FILE%"${VERDICT_FILE##*[![:space:]]}"}"
+              [ -z "$VERDICT_FILE" ] && continue
+              if [ -f "$VERDICT_FILE" ]; then
+                AI_REVIEW_FLAGS+=(--ai-review "$VERDICT_FILE")
+                # Copy into the report dir so generate-report.py can render
+                # an AI Review section (and the artifact keeps the evidence).
+                cp "$VERDICT_FILE" "$ODS_OUTPUT_DIR/ai-review-$VERDICT_IDX.json"
+                VERDICT_IDX=$((VERDICT_IDX + 1))
+              else
+                echo "::warning::ai-review file '$VERDICT_FILE' not found — skipping"
+              fi
+            done < <(printf '%s\n' "$ODS_AI_REVIEW" | tr ',' '\n')
+          else
+            echo "::warning::The installed ODS CLI predates 'ods check --ai-review' — ignoring the ai-review input. Set cli-ref to a release with AI review support (or 'main')."
+          fi
+        fi
         CHECK_JSON="$ODS_OUTPUT_DIR/check.json"
         CHECK_EXIT=0
         set +e
         if [ -n "${ODS_POLICY:-}" ] && [ -f "$ODS_POLICY" ]; then
-          ods check --json --policy "$ODS_POLICY" "${SARIF_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
+          ods check --json --policy "$ODS_POLICY" "${SARIF_FLAGS[@]}" "${AI_REVIEW_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
         else
-          ods check --json "${SARIF_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
+          ods check --json "${SARIF_FLAGS[@]}" "${AI_REVIEW_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
         fi
         set -e
         echo "::endgroup::"

@@ -190,6 +190,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `sarif` | No | — | SARIF file from an external analyzer to merge ([details](#authoritative-analysis-bring-your-own-scanner-sarif)) |
 | `semgrep` | No | `false` | Run Semgrep automatically and merge its findings (ignored when `sarif` is set) |
 | `semgrep-config` | No | `auto` | Semgrep ruleset when `semgrep: true` (registry ID or local rules file) |
+| `ai-review` | No | — | Path(s) to AI reviewer verdict files, newline- or comma-separated ([details](#ai-review-verdicts-semantic-review-as-gate-input)) |
 | `report` | No | `false` | Append an AI attribution digest to the summary/comment/artifact ([details](#periodic-ai-attribution-digest)) |
 | `report-since` | No | `90 days ago` | History window for the attribution digest (any git `--since` expression) |
 | `summary` | No | `true` | Append report to job summary |
@@ -435,6 +436,63 @@ workflow, not inside this action.
 
 See the [CLI docs](https://github.com/open-delivery-spec/cli#review-routing-review_tier)
 for the `review_tier` Rego contract and example rules.
+
+---
+
+## AI Review Verdicts: Semantic Review as Gate Input
+
+Static analysis catches rule violations; an AI code reviewer judges whether
+the change is *correct* — edge cases, logic, intent. The `ai-review` input
+feeds those opinions into the policy gate without letting them take it over:
+
+```yaml
+- name: AI code review
+  run: |
+    # Any reviewer works — it just has to write a review-verdict/v1 file:
+    # https://github.com/open-delivery-spec/spec/blob/main/schemas/review-verdict/v1.json
+    your-ai-reviewer --output ai-review.json
+
+- uses: open-delivery-spec/validate-action@v1
+  with:
+    ai-review: ai-review.json          # newline/comma-separated for several
+    review-routing: "true"             # act on the elevated tier
+    cli-ref: main                      # --ai-review needs a CLI newer than the pinned default
+```
+
+The verdict file:
+
+```json
+{
+  "schema": "ods.dev/review-verdict/v1",
+  "reviewer": { "tool": "claude-code", "model": "claude-sonnet-4-5" },
+  "head_sha": "${{ github.event.pull_request.head.sha }}",
+  "verdict": "request_changes",
+  "findings": [
+    { "file": "src/auth.py", "line": 42, "severity": "high",
+      "category": "correctness", "message": "expiry check uses local time" }
+  ]
+}
+```
+
+Semantics — the same principle as everywhere in ODS: **deterministic findings
+may deny; probabilistic opinions only route attention.**
+
+- A `request_changes` verdict raises the review tier to `elevated` (label +
+  requested reviewers with `review-routing: true`) and adds a warning. It
+  never fails the run.
+- An `approve` never loosens the gate — it cannot qualify a PR for the `auto`
+  tier. A prompt-injected or over-optimistic reviewer can cost you a little
+  extra review attention, never a bad merge.
+- Teams that want AI findings to block opt in explicitly in their own Rego
+  over `input.ai_reviews` — see the
+  [CLI docs](https://github.com/open-delivery-spec/cli#ai-reviewer-verdicts---ai-review).
+- Verdicts stamped with a `head_sha` that doesn't match the PR head are
+  skipped as stale (the action sets `ODS_HEAD_SHA` from the event, so this
+  works on `pull_request` merge-commit checkouts too). Malformed files are
+  skipped with a warning.
+
+The verdicts render as an **AI Review** section in the PR comment and job
+summary, and are preserved in the report artifact as audit evidence.
 
 ---
 
