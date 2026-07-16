@@ -526,7 +526,7 @@ If your workflow doesn’t have access to `github.event.pull_request.body`:
 
 ## In Production
 
-This Action runs on every PR in the `open-delivery-spec` org (dogfooding) and is pending adoption in external repositories. See [ADOPTERS.md](https://github.com/open-delivery-spec/spec/blob/main/ADOPTERS.md) for the current list.
+This Action runs on every PR in the `open-delivery-spec` org (dogfooding) and in external repositories including [devops-maturity](https://github.com/devops-maturity/devops-maturity) and [conventional-branch](https://github.com/conventional-branch/conventional-branch). See [ADOPTERS.md](https://github.com/open-delivery-spec/spec/blob/main/ADOPTERS.md) for the current list.
 
 ---
 
