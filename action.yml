@@ -62,8 +62,8 @@ inputs:
       (review-verdict/v1 JSON) to feed into the policy gate as
       input.ai_reviews. Advisory by default: a request_changes verdict routes
       extra human review, it never denies unless your policy opts in.
-      Requires a CLI with `ods check --ai-review` (cli-ref newer than v0.6.0,
-      e.g. `main`); older CLIs skip the input with a warning.
+      Requires a CLI with `ods check --ai-review` (v0.7.1+, the pinned
+      default); older CLIs skip the input with a warning.
     required: false
     default: ''
 
@@ -137,7 +137,7 @@ inputs:
       ODS CLI version, tag, or commit to install. Defaults to a pinned stable
       release for reproducible runs; set to `main` to track the latest.
     required: false
-    default: 'v0.6.0'
+    default: 'v0.7.1'
 
 outputs:
   result:

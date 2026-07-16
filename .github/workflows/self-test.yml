@@ -189,8 +189,7 @@ jobs:
         uses: ./
         with:
           diff-base: HEAD~1
-          # --ai-review needs a CLI newer than the pinned default.
-          cli-ref: main
+          # Exercises the pinned default CLI — bump breakages surface here.
           ai-review: test-fixtures/ai-review-request-changes.json
           artifact-name: ods-report-aireview
           comment: "false"
@@ -208,8 +207,9 @@ jobs:
         uses: ./
         with:
           diff-base: HEAD~1
-          # Pinned default cli-ref has no --ai-review: the input must be
-          # skipped with a warning, never break the gate.
+          # v0.6.0 predates --ai-review: the input must be skipped with a
+          # warning, never break the gate.
+          cli-ref: v0.6.0
           ai-review: test-fixtures/ai-review-request-changes.json
           artifact-name: ods-report-aireview-oldcli
           comment: "false"
