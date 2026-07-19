@@ -245,7 +245,7 @@ class TestReportJson:
         _, self.report, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
 
     def test_top_level_keys(self):
-        for key in ("result", "ai_detected", "ai_confidence", "analysis", "score", "policy"):
+        for key in ("result", "ai_detected", "ai_confidence", "analysis", "score", "policy", "risk_brief"):
             assert key in self.report
 
     def test_result_matches(self):
@@ -257,6 +257,12 @@ class TestReportJson:
     def test_policy_section(self):
         assert self.report["policy"]["allowed"] is True
         assert self.report["policy"]["denials"] == []
+
+    def test_risk_brief_defaults_present(self):
+        rb = self.report["risk_brief"]
+        assert rb["level"] in {"low", "medium", "high"}
+        assert isinstance(rb["reasons"], list)
+        assert rb["recommended_action"]
 
 
 # ── build_markdown ────────────────────────────────────────────────────────────
@@ -279,6 +285,7 @@ class TestBuildMarkdown:
     def test_html_comment_marker_present(self):
         md = gr.build_markdown(**_MD_BASE)
         assert "<!-- ods-compliance-report -->" in md
+        assert "Risk Brief" in md
 
     def test_coverage_not_measured_shows_na(self):
         md = gr.build_markdown(**_MD_BASE)
@@ -366,6 +373,7 @@ class TestBuildHtml:
         out = gr.build_html(**_HTML_BASE)
         assert "<!DOCTYPE html>" in out
         assert "</html>" in out
+        assert "Risk Brief" in out
 
     def test_coverage_not_measured_shows_na(self):
         out = gr.build_html(**_HTML_BASE)
@@ -445,3 +453,24 @@ class TestReviewTier:
         assert "review_tier=auto" in gh
         # …but a blocked PR is never routed in the human-facing summary.
         assert "**Review Tier:**" not in md
+
+
+# ── Risk brief behavior ────────────────────────────────────────────────────────
+
+class TestRiskBrief:
+    def test_blocked_is_high_risk(self):
+        detect = {**_D_HUMAN, "ai_generated": True, "confidence": 0.95}
+        analyze = {
+            **_A_CLEAN,
+            "issues": [{"rule": "x", "file": "a.go", "severity": "high", "message": "bad"}],
+            "summary": "1 issue(s) found: 1 high",
+        }
+        check = {"allowed": False, "denials": ["critical policy fail"], "warnings": []}
+        _, report, md, _ = _run(detect, analyze, _S_NEUTRAL, check)
+        assert report["risk_brief"]["level"] == "high"
+        assert "Risk Level" in md and "high" in md.lower()
+
+    def test_clean_human_pr_is_low_risk(self):
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert report["risk_brief"]["level"] == "low"
+        assert "Low review risk" in report["risk_brief"]["recommended_action"]

@@ -55,6 +55,90 @@ def coverage_label(cov):
     return f"{cov*100:.0f}%"
 
 
+def issue_severity_counts(issues):
+    counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+    for issue in issues:
+        sev = str(issue.get("severity", "")).lower()
+        if sev in counts:
+            counts[sev] += 1
+    return counts
+
+
+def build_risk_brief(
+    *,
+    policy_allowed,
+    detect_error,
+    ai_detected,
+    ai_confidence,
+    review_tier,
+    tech_debt,
+    verdict,
+    denials,
+    warnings_list,
+    issues,
+    score_breakdown,
+):
+    counts = issue_severity_counts(issues)
+    reasons = []
+
+    if detect_error:
+        reasons.append("AI detection inconclusive; confidence in attribution is reduced")
+    if denials:
+        reasons.append(f"Policy denied merge ({len(denials)} denial(s))")
+    if counts["critical"] > 0:
+        reasons.append(f"{counts['critical']} critical issue(s) detected")
+    if counts["high"] > 0:
+        reasons.append(f"{counts['high']} high-severity issue(s) detected")
+    if tech_debt >= 5.0:
+        reasons.append(f"Technical debt delta is {tech_debt:+.1f} (block range)")
+    elif tech_debt >= 3.0:
+        reasons.append(f"Technical debt delta is {tech_debt:+.1f} (high-risk range)")
+    if ai_detected and ai_confidence >= 0.8:
+        reasons.append(f"High-confidence AI involvement ({ai_confidence*100:.0f}%)")
+
+    coverage = score_breakdown.get("test_coverage")
+    try:
+        coverage = float(coverage)
+    except (TypeError, ValueError):
+        coverage = -1
+    if 0 <= coverage < 0.3:
+        reasons.append(f"Low measured test coverage ({coverage*100:.0f}%)")
+
+    if not reasons and warnings_list:
+        reasons.append(f"{len(warnings_list)} policy warning(s) require reviewer attention")
+    if not reasons and verdict == "increase":
+        reasons.append("Score verdict is increase; this PR needs careful review")
+    if not reasons:
+        reasons.append("No strong risk signals detected")
+
+    if not policy_allowed:
+        level = "high"
+        action = "Block merge. Fix denials, then require elevated human review."
+    elif detect_error or review_tier == "elevated" or counts["critical"] > 0 or counts["high"] > 0 or tech_debt >= 3.0:
+        level = "high"
+        action = "Require elevated human review focused on flagged files and rules."
+    elif ai_detected or len(issues) > 0 or verdict == "increase" or warnings_list:
+        level = "medium"
+        action = "Run standard human review; verify tests and high-impact logic paths."
+    else:
+        level = "low"
+        action = "Low review risk. Proceed with normal approval flow."
+
+    return {
+        "level": level,
+        "review_tier": review_tier,
+        "recommended_action": action,
+        "reasons": reasons[:4],
+        "stats": {
+            "critical_issues": counts["critical"],
+            "high_issues": counts["high"],
+            "medium_issues": counts["medium"],
+            "ai_confidence": ai_confidence,
+            "technical_debt_delta": tech_debt,
+        },
+    }
+
+
 def main():
     report_dir = sys.argv[1]
     github_output = sys.argv[2] if len(sys.argv) > 2 else ""
@@ -81,6 +165,20 @@ def main():
     files = detect.get("files", [])
     evidence = detect.get("evidence", [])
     sources = detect.get("sources", [])
+    score_breakdown = score.get("breakdown", {})
+    risk_brief = build_risk_brief(
+        policy_allowed=policy_allowed,
+        detect_error=detect_error,
+        ai_detected=ai_detected,
+        ai_confidence=ai_confidence,
+        review_tier=review_tier,
+        tech_debt=tech_debt,
+        verdict=verdict,
+        denials=denials,
+        warnings_list=warnings_list,
+        issues=issues,
+        score_breakdown=score_breakdown,
+    )
 
     # Determine overall result
     if not policy_allowed:
@@ -130,7 +228,7 @@ def main():
             "technical_debt_delta": tech_debt,
             "verdict": verdict,
             "recommendation": recommendation,
-            "breakdown": score.get("breakdown", {}),
+            "breakdown": score_breakdown,
         },
         "policy": {
             "allowed": policy_allowed,
@@ -138,6 +236,7 @@ def main():
             "denials": denials,
             "warnings": warnings_list,
         },
+        "risk_brief": risk_brief,
     }
 
     with open(os.path.join(report_dir, "ods-report.json"), "w") as f:
@@ -162,6 +261,7 @@ def main():
         denials=denials,
         warnings_list=warnings_list,
         files=files,
+        risk_brief=risk_brief,
     )
 
     summary_path = os.path.join(report_dir, "ods-summary.md")
@@ -194,6 +294,7 @@ def main():
         analyze_summary=analyze_summary,
         issues=issues,
         score=score,
+        risk_brief=risk_brief,
     )
     with open(os.path.join(report_dir, "index.html"), "w") as f:
         f.write(html)
@@ -227,6 +328,22 @@ def build_markdown(**kw):
         tier = kw.get("review_tier", "standard")
         tier_icon = {"auto": "\U0001f7e2", "standard": "\U0001f535", "elevated": "\U0001f7e0"}.get(tier, "")
         lines.append(f"**Review Tier:** {tier_icon} {tier}  ")
+    lines.append("")
+    risk = kw.get("risk_brief", {})
+    risk_level = str(risk.get("level", "medium")).lower()
+    risk_icon = {"high": "🔴", "medium": "🟠", "low": "🟢"}.get(risk_level, "🟠")
+    lines.extend([
+        "### 🧭 Risk Brief",
+        "",
+        f"**Risk Level:** {risk_icon} {risk_level}  ",
+        f"**Review Action:** {risk.get('recommended_action', 'Standard review recommended')}  ",
+    ])
+    reasons = risk.get("reasons", [])
+    if reasons:
+        lines.append("")
+        lines.append("**Why this level:**")
+        for reason in reasons:
+            lines.append(f"- {reason}")
     lines.append("")
 
     # Detection
@@ -354,6 +471,10 @@ def build_html(**kw):
         for i in kw["issues"][:20]
     ) or '<tr><td colspan="4" class="empty">No quality issues detected.</td></tr>'
     b = kw["score"].get("breakdown", {})
+    risk = kw.get("risk_brief", {})
+    risk_level = str(risk.get("level", "medium")).lower()
+    risk_badge = {"high": "🔴 HIGH", "medium": "🟠 MEDIUM", "low": "🟢 LOW"}.get(risk_level, "🟠 MEDIUM")
+    risk_reasons = "".join(f"<li>{h(r)}</li>" for r in (risk.get("reasons") or []))
     result_value = kw["result_value"]
     overall_text = {"pass": "✅ PASS", "warn": "⚠️ WARN", "block": "❌ BLOCK"}.get(
         result_value, h(kw["overall"])
@@ -434,6 +555,13 @@ def build_html(**kw):
     <div class="sub">{h(kw['verdict'])}</div></div>
   <div class="card"><div class="label">Policy</div>
     <div class="value">{'✅ Allowed' if kw['policy_allowed'] else '❌ Blocked'}</div></div>
+  <div class="card"><div class="label">Risk Brief</div>
+    <div class="value">{risk_badge}</div>
+    <div class="sub">{h(risk.get('recommended_action', 'Standard review recommended'))}</div></div>
+</div>
+
+<div class="section"><h2>🧭 Risk Brief</h2>
+<ul>{risk_reasons or '<li>No strong risk signals detected.</li>'}</ul>
 </div>
 
 <div class="section"><h2>🔍 Detection Evidence</h2>

@@ -132,6 +132,10 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 > **AI Detected:** 👤 No (confidence: 0%)  
 > **Tech Debt Delta:** +0.3 (neutral)  
 > **Policy:** ✅ Allowed  
+>  
+> ### 🧭 Risk Brief
+> **Risk Level:** 🟢 low  
+> **Review Action:** Low review risk. Proceed with normal approval flow.
 >
 > ### 🔍 Detection
 > No AI code detected.
@@ -156,6 +160,10 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 > **AI Detected:** 🤖 Yes (confidence: 85%)  
 > **Tech Debt Delta:** +4.2 (increase)  
 > **Policy:** ✅ Allowed  
+>  
+> ### 🧭 Risk Brief
+> **Risk Level:** 🟠 medium  
+> **Review Action:** Run standard human review; verify tests and high-impact logic paths.
 >
 > ### 🔍 Detection
 > | Source | Signal | Confidence |
@@ -171,6 +179,10 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 
 > **Result:** ❌ BLOCK  
 > **Policy:** ❌ Blocked  
+>
+> ### 🧭 Risk Brief
+> **Risk Level:** 🔴 high  
+> **Review Action:** Block merge. Fix denials, then require elevated human review.
 >
 > ### 🚫 Policy Denials
 > - ❌ AI code with low test coverage
