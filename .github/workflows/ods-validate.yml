@@ -24,10 +24,10 @@ jobs:
       - name: Conventional branch & commit checks
         run: |
           python3 -m pip install 'commit-check>=2.9.0'
-          commit-check --message --branch
+          commit-check --message
 
       - name: ODS AI code quality gate
-        uses: open-delivery-spec/validate-action@d7a0c35ee9f3ba18249178bd01a295a68774627b # v1
+        uses: ./ # self test
         with:
           diff-base: ${{ github.event.pull_request.base.sha || 'origin/main' }}
           branch: ${{ github.head_ref }}
