@@ -81,6 +81,30 @@ class TestMdCell:
         assert gr.md_cell(42) == "42"
 
 
+# ── aggregate_detection_evidence ──────────────────────────────────────────────
+
+class TestAggregateDetectionEvidence:
+    def test_commit_trailer_rows_are_grouped(self):
+        rows = gr.aggregate_detection_evidence([
+            {"source": "commit-trailer", "value": "AI-assisted commit a1 (tool: Copilot App)", "confidence": 0.9},
+            {"source": "commit-trailer", "value": "AI-assisted commit a2 (tool: Copilot App)", "confidence": 0.9},
+        ])
+        assert len(rows) == 1
+        assert rows[0]["source"] == "commit-trailer"
+        assert "2 AI-assisted commit(s)" in rows[0]["signal"]
+        assert "Copilot App" in rows[0]["signal"]
+        assert rows[0]["confidence"] == 0.9
+
+    def test_non_commit_duplicates_are_collapsed_with_count(self):
+        rows = gr.aggregate_detection_evidence([
+            {"source": "pr-body", "value": "AI disclosure checkbox is checked", "confidence": 0.85},
+            {"source": "pr-body", "value": "AI disclosure checkbox is checked", "confidence": 0.80},
+        ])
+        assert len(rows) == 1
+        assert "(x2)" in rows[0]["signal"]
+        assert rows[0]["confidence"] == 0.85
+
+
 # ── h (HTML escape) ───────────────────────────────────────────────────────────
 
 class TestH:
@@ -207,10 +231,10 @@ class TestResultDetermination:
         result, _, _, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
         assert result == "warn"
 
-    def test_ai_detected_is_warn(self):
+    def test_ai_detected_is_pass_when_policy_allows(self):
         detect = {**_D_HUMAN, "ai_generated": True, "confidence": 0.9}
         result, _, _, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
-        assert result == "warn"
+        assert result == "pass"
 
     def test_block_beats_detect_error(self):
         detect = {**_D_HUMAN, "_ods_detect_error": True}
@@ -251,7 +275,7 @@ class TestReportJson:
         _, self.report, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
 
     def test_top_level_keys(self):
-        for key in ("result", "ai_detected", "ai_confidence", "analysis", "score", "policy"):
+        for key in ("result", "ai_detected", "ai_confidence", "analysis", "score", "policy", "risk_brief"):
             assert key in self.report
 
     def test_result_matches(self):
@@ -263,6 +287,17 @@ class TestReportJson:
     def test_policy_section(self):
         assert self.report["policy"]["allowed"] is True
         assert self.report["policy"]["denials"] == []
+
+    def test_risk_brief_defaults_present(self):
+        rb = self.report["risk_brief"]
+        assert rb["level"] in {"low", "medium", "high"}
+        assert isinstance(rb["reasons"], list)
+        assert rb["recommended_action"]
+
+    def test_calibration_marker_present(self):
+        marker = self.report.get("calibration_marker", "")
+        assert marker.startswith("<!-- ods-calibration ")
+        assert marker.endswith(" -->")
 
 
 # ── build_markdown ────────────────────────────────────────────────────────────
@@ -285,6 +320,7 @@ class TestBuildMarkdown:
     def test_html_comment_marker_present(self):
         md = gr.build_markdown(**_MD_BASE)
         assert "<!-- ods-compliance-report -->" in md
+        assert "Risk Brief" not in md
 
     def test_coverage_not_measured_shows_na(self):
         md = gr.build_markdown(**_MD_BASE)
@@ -304,6 +340,16 @@ class TestBuildMarkdown:
         md = gr.build_markdown(**kw)
         assert "Co-Authored-By" in md
         assert "90%" in md
+        assert "Confidence is computed by `ods detect`" in md
+
+    def test_commit_trailer_evidence_is_grouped_in_markdown(self):
+        kw = dict(_MD_BASE, evidence=[
+            {"source": "commit-trailer", "value": "AI-assisted commit a1 (tool: Copilot App)", "confidence": 0.9},
+            {"source": "commit-trailer", "value": "AI-assisted commit a2 (tool: Copilot App)", "confidence": 0.9},
+        ])
+        md = gr.build_markdown(**kw)
+        assert "2 AI-assisted commit(s)" in md
+        assert "a1" not in md and "a2" not in md
 
     def test_no_evidence_shows_fallback(self):
         md = gr.build_markdown(**_MD_BASE)
@@ -401,6 +447,7 @@ class TestBuildHtml:
         out = gr.build_html(**kw)
         assert "Co-Authored-By" in out
         assert "85%" in out
+        assert "max signal confidence plus corroboration bonus" in out
 
     def test_issue_rows_rendered(self):
         kw = dict(_HTML_BASE, issues=[
@@ -451,6 +498,38 @@ class TestReviewTier:
         assert "review_tier=auto" in gh
         # …but a blocked PR is never routed in the human-facing summary.
         assert "**Review Tier:**" not in md
+
+
+# ── Risk brief behavior ────────────────────────────────────────────────────────
+
+class TestRiskBrief:
+    def test_blocked_is_high_risk(self):
+        detect = {**_D_HUMAN, "ai_generated": True, "confidence": 0.95}
+        analyze = {
+            **_A_CLEAN,
+            "issues": [{"rule": "x", "file": "a.go", "severity": "high", "message": "bad"}],
+            "summary": "1 issue(s) found: 1 high",
+        }
+        check = {"allowed": False, "denials": ["critical policy fail"], "warnings": []}
+        _, report, md, _ = _run(detect, analyze, _S_NEUTRAL, check)
+        assert report["risk_brief"]["level"] == "high"
+        assert "Risk Level" not in md
+
+    def test_clean_human_pr_is_low_risk(self):
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert report["risk_brief"]["level"] == "low"
+        assert "Low review risk" in report["risk_brief"]["recommended_action"]
+
+    def test_ai_only_medium_risk_explains_low_debt_note(self):
+        detect = {**_D_HUMAN, "ai_generated": True, "confidence": 0.95}
+        score = dict(_S_NEUTRAL)
+        score["verdict"] = "decrease"
+        score["recommendation"] = "Low risk — acceptable for merge"
+        _, report, md, _ = _run(detect, _A_CLEAN, score, _C_ALLOW)
+        assert report["risk_brief"]["level"] == "medium"
+        joined = " ".join(report["risk_brief"]["reasons"])
+        assert "low debt" in joined
+        assert "Risk Level" not in md
 
 
 # ── AI review verdicts ────────────────────────────────────────────────────────

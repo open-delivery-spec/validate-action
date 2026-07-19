@@ -80,6 +80,29 @@ inputs:
     required: false
     default: '90 days ago'
 
+  calibration:
+    description: >-
+      Enable risk-tier calibration loop: compare predicted review risk
+      (embedded in ODS PR comments) with merged PR outcomes labeled as
+      `ods:outcome/*` in this repository.
+    required: false
+    default: 'false'
+
+  calibration-window-days:
+    description: 'Lookback window (days) for merged PR calibration sampling'
+    required: false
+    default: '30'
+
+  calibration-min-samples:
+    description: 'Minimum labeled samples before threshold-tuning recommendations'
+    required: false
+    default: '20'
+
+  calibration-summary:
+    description: 'Append calibration summary to job summary and PR comment'
+    required: false
+    default: 'false'
+
   summary:
     description: 'Append Markdown report to the GitHub Actions job summary'
     required: false
@@ -429,6 +452,49 @@ runs:
           printf '\n%s\n' "$MD" >> "$GITHUB_STEP_SUMMARY"
         fi
         echo "$MD"
+        echo "::endgroup::"
+
+    - name: Risk calibration report (optional)
+      if: always() && inputs.calibration == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        OUT_DIR: ${{ inputs.output-dir }}
+        INPUT_SUMMARY: ${{ inputs.summary }}
+        INPUT_CAL_SUMMARY: ${{ inputs.calibration-summary }}
+        WINDOW_DAYS: ${{ inputs.calibration-window-days }}
+        MIN_SAMPLES: ${{ inputs.calibration-min-samples }}
+        REPO: ${{ github.repository }}
+        ACTION_DIR: ${{ github.action_path }}
+      run: |
+        set -uo pipefail
+        echo "::group::Risk calibration"
+        mkdir -p "$OUT_DIR"
+        if [ -z "${GH_TOKEN:-}" ]; then
+          echo "::warning::Skipping calibration — github-token is empty."
+          echo "::endgroup::"
+          exit 0
+        fi
+        if ! python3 "$ACTION_DIR/scripts/calibrate-risk.py" \
+            --repo "$REPO" \
+            --token "$GH_TOKEN" \
+            --window-days "$WINDOW_DAYS" \
+            --min-samples "$MIN_SAMPLES" \
+            --out-json "$OUT_DIR/calibration.json" \
+            --out-md "$OUT_DIR/ods-calibration.md"; then
+          echo "::warning::calibration report failed — skipping"
+          echo "::endgroup::"
+          exit 0
+        fi
+        if [ "${INPUT_CAL_SUMMARY:-false}" = "true" ]; then
+          if [ -f "$OUT_DIR/ods-summary.md" ]; then
+            printf '\n%s\n' "$(cat "$OUT_DIR/ods-calibration.md")" >> "$OUT_DIR/ods-summary.md"
+          fi
+          if [ "${INPUT_SUMMARY:-true}" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            printf '\n%s\n' "$(cat "$OUT_DIR/ods-calibration.md")" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        fi
+        echo "Calibration report generated at $OUT_DIR/calibration.json"
         echo "::endgroup::"
 
     - name: Upload ODS Report

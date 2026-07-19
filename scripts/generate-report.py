@@ -13,6 +13,7 @@ import glob
 import html
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -56,6 +57,173 @@ def coverage_label(cov):
     return f"{cov*100:.0f}%"
 
 
+def issue_severity_counts(issues):
+    counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+    for issue in issues:
+        sev = str(issue.get("severity", "")).lower()
+        if sev in counts:
+            counts[sev] += 1
+    return counts
+
+
+_COMMIT_TRAILER_TOOL_RE = re.compile(r"\(tool:\s*([^)]+)\)\s*$", re.IGNORECASE)
+
+
+def aggregate_detection_evidence(evidence):
+    """Group repetitive evidence rows to reduce noise in reports.
+
+    Today the noisiest source is commit-trailer, where each commit can produce
+    one row. We collapse those into one row and retain the max confidence.
+    """
+    if not evidence:
+        return []
+
+    grouped = []
+    commit_count = 0
+    commit_conf = 0.0
+    commit_tools = []
+    commit_tool_seen = set()
+
+    other = {}
+    other_order = []
+    for ev in evidence:
+        source = str(ev.get("source", "?"))
+        value = str(ev.get("value", ev.get("signal", "?")))
+        conf = float(ev.get("confidence", 0) or 0)
+
+        if source == "commit-trailer":
+            commit_count += 1
+            commit_conf = max(commit_conf, conf)
+            m = _COMMIT_TRAILER_TOOL_RE.search(value)
+            if m:
+                tool = m.group(1).strip()
+                if tool and tool not in commit_tool_seen:
+                    commit_tool_seen.add(tool)
+                    commit_tools.append(tool)
+            continue
+
+        key = (source, value)
+        if key not in other:
+            other[key] = {"source": source, "signal": value, "confidence": conf, "count": 1}
+            other_order.append(key)
+        else:
+            row = other[key]
+            row["count"] += 1
+            row["confidence"] = max(row["confidence"], conf)
+
+    if commit_count > 0:
+        if commit_tools:
+            tool_text = ", ".join(commit_tools)
+            signal = f"{commit_count} AI-assisted commit(s) via Co-Authored-By (tool: {tool_text})"
+        else:
+            signal = f"{commit_count} AI-assisted commit(s) via Co-Authored-By"
+        grouped.append({"source": "commit-trailer", "signal": signal, "confidence": commit_conf, "count": commit_count})
+
+    for key in other_order:
+        row = other[key]
+        if row["count"] > 1:
+            row["signal"] = f"{row['signal']} (x{row['count']})"
+        grouped.append(row)
+
+    return grouped
+
+
+def predicted_risk_from_tier(review_tier, detect_error):
+    if detect_error:
+        return "high"
+    tier = str(review_tier or "standard").lower()
+    return {"auto": "low", "standard": "medium", "elevated": "high"}.get(tier, "medium")
+
+
+def build_risk_brief(
+    *,
+    policy_allowed,
+    detect_error,
+    ai_detected,
+    ai_confidence,
+    review_tier,
+    tech_debt,
+    verdict,
+    denials,
+    warnings_list,
+    issues,
+    score_breakdown,
+):
+    counts = issue_severity_counts(issues)
+    reasons = []
+
+    if detect_error:
+        reasons.append("AI detection inconclusive; confidence in attribution is reduced")
+    if denials:
+        reasons.append(f"Policy denied merge ({len(denials)} denial(s))")
+    if counts["critical"] > 0:
+        reasons.append(f"{counts['critical']} critical issue(s) detected")
+    if counts["high"] > 0:
+        reasons.append(f"{counts['high']} high-severity issue(s) detected")
+    if tech_debt >= 5.0:
+        reasons.append(f"Technical debt delta is {tech_debt:+.1f} (block range)")
+    elif tech_debt >= 3.0:
+        reasons.append(f"Technical debt delta is {tech_debt:+.1f} (high-risk range)")
+    if ai_detected and ai_confidence >= 0.8:
+        reasons.append(f"High-confidence AI involvement ({ai_confidence*100:.0f}%)")
+
+    coverage = score_breakdown.get("test_coverage")
+    try:
+        coverage = float(coverage)
+    except (TypeError, ValueError):
+        coverage = -1
+    if 0 <= coverage < 0.3:
+        reasons.append(f"Low measured test coverage ({coverage*100:.0f}%)")
+
+    if not reasons and warnings_list:
+        reasons.append(f"{len(warnings_list)} policy warning(s) require reviewer attention")
+    if not reasons and verdict == "increase":
+        reasons.append("Score verdict is increase; this PR needs careful review")
+    if ai_detected and verdict == "decrease":
+        reasons.append("Score verdict is low debt, but AI-attributed changes still require human routing review")
+    if not reasons:
+        reasons.append("No strong risk signals detected")
+
+    if not policy_allowed:
+        level = "high"
+        action = "Block merge. Fix denials, then require elevated human review."
+    elif detect_error or review_tier == "elevated" or counts["critical"] > 0 or counts["high"] > 0 or tech_debt >= 3.0:
+        level = "high"
+        action = "Require elevated human review focused on flagged files and rules."
+    elif ai_detected or len(issues) > 0 or verdict == "increase" or warnings_list:
+        level = "medium"
+        action = "Run standard human review; verify tests and high-impact logic paths."
+    else:
+        level = "low"
+        action = "Low review risk. Proceed with normal approval flow."
+
+    return {
+        "level": level,
+        "review_tier": review_tier,
+        "recommended_action": action,
+        "reasons": reasons[:4],
+        "stats": {
+            "critical_issues": counts["critical"],
+            "high_issues": counts["high"],
+            "medium_issues": counts["medium"],
+            "ai_confidence": ai_confidence,
+            "technical_debt_delta": tech_debt,
+        },
+    }
+
+
+def build_calibration_marker(*, review_tier, detect_error, tech_debt, ai_confidence, policy_allowed):
+    payload = {
+        "version": 1,
+        "predicted_tier": str(review_tier or "standard"),
+        "predicted_risk": predicted_risk_from_tier(review_tier, detect_error),
+        "gate_result": "pass" if policy_allowed else "block",
+        "ai_confidence": round(float(ai_confidence or 0), 4),
+        "tech_debt_delta": round(float(tech_debt or 0), 4),
+    }
+    return f"<!-- ods-calibration {json.dumps(payload, separators=(',', ':'))} -->"
+
+
 def main():
     report_dir = sys.argv[1]
     github_output = sys.argv[2] if len(sys.argv) > 2 else ""
@@ -89,20 +257,37 @@ def main():
     issues = analyze.get("issues", [])
     files = detect.get("files", [])
     evidence = detect.get("evidence", [])
+    detection_rows = aggregate_detection_evidence(evidence)
     sources = detect.get("sources", [])
+    score_breakdown = score.get("breakdown", {})
+    risk_brief = build_risk_brief(
+        policy_allowed=policy_allowed,
+        detect_error=detect_error,
+        ai_detected=ai_detected,
+        ai_confidence=ai_confidence,
+        review_tier=review_tier,
+        tech_debt=tech_debt,
+        verdict=verdict,
+        denials=denials,
+        warnings_list=warnings_list,
+        issues=issues,
+        score_breakdown=score_breakdown,
+    )
+    calibration_marker = build_calibration_marker(
+        review_tier=review_tier,
+        detect_error=detect_error,
+        tech_debt=tech_debt,
+        ai_confidence=ai_confidence,
+        policy_allowed=policy_allowed,
+    )
 
-    # Determine overall result
+    # Determine gate result (merge gate status only).
+    # Risk level is handled independently by Risk Brief.
     if not policy_allowed:
         overall = "\u274c BLOCK"
         result_value = "block"
     elif detect_error:
         # Detection failed \u2014 treat as warn so the PR isn't silently passed
-        overall = "\u26a0\ufe0f  WARN"
-        result_value = "warn"
-    elif ai_detected and ai_confidence >= 0.8 and len(issues) > 0:
-        overall = "\u26a0\ufe0f  WARN"
-        result_value = "warn"
-    elif ai_detected:
         overall = "\u26a0\ufe0f  WARN"
         result_value = "warn"
     else:
@@ -139,7 +324,7 @@ def main():
             "technical_debt_delta": tech_debt,
             "verdict": verdict,
             "recommendation": recommendation,
-            "breakdown": score.get("breakdown", {}),
+            "breakdown": score_breakdown,
         },
         "policy": {
             "allowed": policy_allowed,
@@ -147,6 +332,8 @@ def main():
             "denials": denials,
             "warnings": warnings_list,
         },
+        "risk_brief": risk_brief,
+        "calibration_marker": calibration_marker,
         "ai_reviews": ai_reviews,
     }
 
@@ -166,12 +353,15 @@ def main():
         policy_allowed=policy_allowed,
         review_tier=review_tier,
         evidence=evidence,
+        detection_rows=detection_rows,
         analyze_summary=analyze_summary,
         issues=issues,
         score=score,
         denials=denials,
         warnings_list=warnings_list,
         files=files,
+        risk_brief=risk_brief,
+        calibration_marker=calibration_marker,
         ai_reviews=ai_reviews,
     )
 
@@ -202,9 +392,11 @@ def main():
         verdict=verdict,
         policy_allowed=policy_allowed,
         evidence=evidence,
+        detection_rows=detection_rows,
         analyze_summary=analyze_summary,
         issues=issues,
         score=score,
+        risk_brief=risk_brief,
     )
     with open(os.path.join(report_dir, "index.html"), "w") as f:
         f.write(html)
@@ -227,9 +419,10 @@ def build_markdown(**kw):
     policy_label = "\u2705 Allowed" if kw["policy_allowed"] else "\u274c Blocked"
     lines = [
         "<!-- ods-compliance-report -->",
+        kw.get("calibration_marker", ""),
         "## ODS AI Code Quality Report",
         "",
-        f"**Result:** {kw['overall']}  ",
+        f"**Gate Result:** {kw['overall']}  ",
         f"**AI Detected:** {ai_label} (confidence: {kw['ai_confidence']*100:.0f}%)  ",
         f"**Tech Debt Delta:** {kw['tech_debt']:+.1f} ({kw['verdict']})  ",
         f"**Policy:** {policy_label}  ",
@@ -251,10 +444,13 @@ def build_markdown(**kw):
             "",
         ])
     ev = kw["evidence"]
-    if ev:
+    rows = kw.get("detection_rows") or aggregate_detection_evidence(ev)
+    if rows:
         lines.extend(["", "| Source | Signal | Confidence |", "|--------|--------|-----------|"])
-        for e in ev:
-            lines.append(f"| {md_cell(e.get('source','?'))} | {md_cell(e.get('value','?'))} | {e.get('confidence',0)*100:.0f}% |")
+        for e in rows:
+            lines.append(f"| {md_cell(e.get('source','?'))} | {md_cell(e.get('signal','?'))} | {e.get('confidence',0)*100:.0f}% |")
+        lines.append("")
+        lines.append("_Confidence is computed by `ods detect` as max signal confidence plus corroboration bonus (capped at 100%). Evidence rows may be grouped by source._")
     elif not kw.get("detect_error"):
         lines.append("No AI code detected.")
 
@@ -401,10 +597,11 @@ def build_html(**kw):
         )
     else:
         _detect_empty = '<tr><td colspan="3" class="empty">No AI code detected.</td></tr>'
+    detection_rows = kw.get("detection_rows") or aggregate_detection_evidence(kw["evidence"])
     evidence_rows = "".join(
-        f"<tr><td>{h(e.get('source','?'))}</td><td>{h(e.get('value','?'))}</td>"
+        f"<tr><td>{h(e.get('source','?'))}</td><td>{h(e.get('signal','?'))}</td>"
         f"<td class=num>{e.get('confidence',0)*100:.0f}%</td></tr>"
-        for e in kw["evidence"]
+        for e in detection_rows
     ) or _detect_empty
     issue_rows = "".join(
         f"<tr><td><code>{h(i.get('rule','?'))}</code></td><td>{h(i.get('file','?'))}</td>"
@@ -496,7 +693,9 @@ def build_html(**kw):
 
 <div class="section"><h2>🔍 Detection Evidence</h2>
 <table><thead><tr><th>Source</th><th>Signal</th><th class="num">Confidence</th></tr></thead>
-<tbody>{evidence_rows}</tbody></table></div>
+<tbody>{evidence_rows}</tbody></table>
+<p class="sub">Confidence is computed by <code>ods detect</code> as max signal confidence plus corroboration bonus (capped at 100%). Evidence rows may be grouped by source.</p>
+</div>
 
 <div class="section"><h2>📊 Quality Issues</h2>
 <p class="sub">{h(kw['analyze_summary'])}</p>
