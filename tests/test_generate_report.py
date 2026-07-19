@@ -207,10 +207,10 @@ class TestResultDetermination:
         result, _, _, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
         assert result == "warn"
 
-    def test_ai_detected_is_warn(self):
+    def test_ai_detected_is_pass_when_policy_allows(self):
         detect = {**_D_HUMAN, "ai_generated": True, "confidence": 0.9}
         result, _, _, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
-        assert result == "warn"
+        assert result == "pass"
 
     def test_block_beats_detect_error(self):
         detect = {**_D_HUMAN, "_ods_detect_error": True}

@@ -128,7 +128,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 
 > ## ODS AI Code Quality Report
 >
-> **Result:** ✅ PASS  
+> **Gate Result:** ✅ PASS  
 > **AI Detected:** 👤 No (confidence: 0%)  
 > **Tech Debt Delta:** +0.3 (neutral)  
 > **Policy:** ✅ Allowed  
@@ -156,7 +156,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 
 ### When AI code is detected:
 
-> **Result:** ⚠️  WARN  
+> **Gate Result:** ✅ PASS  
 > **AI Detected:** 🤖 Yes (confidence: 85%)  
 > **Tech Debt Delta:** +4.2 (increase)  
 > **Policy:** ✅ Allowed  
@@ -177,7 +177,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 
 ### When policy blocks the PR:
 
-> **Result:** ❌ BLOCK  
+> **Gate Result:** ❌ BLOCK  
 > **Policy:** ❌ Blocked  
 >
 > ### 🧭 Risk Brief

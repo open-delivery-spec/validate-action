@@ -189,18 +189,13 @@ def main():
         score_breakdown=score_breakdown,
     )
 
-    # Determine overall result
+    # Determine gate result (merge gate status only).
+    # Risk level is handled independently by Risk Brief.
     if not policy_allowed:
         overall = "\u274c BLOCK"
         result_value = "block"
     elif detect_error:
         # Detection failed \u2014 treat as warn so the PR isn't silently passed
-        overall = "\u26a0\ufe0f  WARN"
-        result_value = "warn"
-    elif ai_detected and ai_confidence >= 0.8 and len(issues) > 0:
-        overall = "\u26a0\ufe0f  WARN"
-        result_value = "warn"
-    elif ai_detected:
         overall = "\u26a0\ufe0f  WARN"
         result_value = "warn"
     else:
@@ -330,7 +325,7 @@ def build_markdown(**kw):
         "<!-- ods-compliance-report -->",
         "## ODS AI Code Quality Report",
         "",
-        f"**Result:** {kw['overall']}  ",
+        f"**Gate Result:** {kw['overall']}  ",
         f"**AI Detected:** {ai_label} (confidence: {kw['ai_confidence']*100:.0f}%)  ",
         f"**Tech Debt Delta:** {kw['tech_debt']:+.1f} ({kw['verdict']})  ",
         f"**Policy:** {policy_label}  ",
