@@ -153,12 +153,18 @@ _S_NEUTRAL = {
 _C_ALLOW = {"allowed": True, "denials": [], "warnings": []}
 
 
-def _run(detect, analyze, score, check):
-    """Run main() in a temp dir; return (result, ods_report_dict, summary_md, gh_output_lines)."""
+def _run(detect, analyze, score, check, extra_files=None):
+    """Run main() in a temp dir; return (result, ods_report_dict, summary_md, gh_output_lines).
+
+    extra_files: optional {filename: dict} written alongside the stage JSONs
+    (e.g. ai-review-0.json verdict files).
+    """
     with tempfile.TemporaryDirectory() as d:
         for name, data in [("detect", detect), ("analyze", analyze),
                            ("score", score), ("check", check)]:
             Path(d, f"{name}.json").write_text(json.dumps(data))
+        for name, data in (extra_files or {}).items():
+            Path(d, name).write_text(json.dumps(data))
 
         github_output = os.path.join(d, "gh_output.txt")
 
@@ -455,6 +461,7 @@ class TestReviewTier:
         assert "**Review Tier:**" not in md
 
 
+<<<<<<< HEAD
 # ── Risk brief behavior ────────────────────────────────────────────────────────
 
 class TestRiskBrief:
@@ -474,3 +481,55 @@ class TestRiskBrief:
         _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
         assert report["risk_brief"]["level"] == "low"
         assert "Low review risk" in report["risk_brief"]["recommended_action"]
+=======
+# ── AI review verdicts ────────────────────────────────────────────────────────
+
+_VERDICT_RC = {
+    "schema": "ods.dev/review-verdict/v1",
+    "reviewer": {"tool": "claude-code", "model": "claude-sonnet-4-5"},
+    "verdict": "request_changes",
+    "findings": [
+        {"file": "svc.go", "line": 42, "severity": "high",
+         "category": "correctness", "message": "expiry uses local | time"},
+    ],
+}
+
+
+class TestAIReviewSection:
+    def test_verdict_file_renders_section_and_report_json(self):
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW,
+                                extra_files={"ai-review-0.json": _VERDICT_RC})
+        assert "### 🧠 AI Review" in md
+        assert "claude-code (claude-sonnet-4-5)" in md
+        assert "request_changes" in md
+        assert "svc.go:42" in md
+        # pipe in the finding message must not break the table
+        assert "expiry uses local \\| time" in md
+        assert "advisory" in md
+        assert report["ai_reviews"][0]["verdict"] == "request_changes"
+
+    def test_multiple_reviewers_all_listed(self):
+        approve = {**_VERDICT_RC, "verdict": "approve", "findings": [],
+                   "reviewer": {"tool": "coderabbit"}}
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW,
+                                extra_files={"ai-review-0.json": _VERDICT_RC,
+                                             "ai-review-1.json": approve})
+        assert "claude-code" in md and "coderabbit" in md
+        assert len(report["ai_reviews"]) == 2
+
+    def test_no_verdict_files_no_section(self):
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert "AI Review" not in md
+        assert report["ai_reviews"] == []
+
+    def test_unparseable_verdict_skipped(self):
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW,
+                                extra_files={"ai-review-0.json": {"not": "a verdict"}})
+        assert "AI Review" not in md
+        assert report["ai_reviews"] == []
+
+    def test_verdict_never_changes_result(self):
+        result, _, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW,
+                               extra_files={"ai-review-0.json": _VERDICT_RC})
+        assert result == "pass"
+>>>>>>> origin/main

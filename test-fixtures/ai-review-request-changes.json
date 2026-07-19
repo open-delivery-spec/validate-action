@@ -1,0 +1,14 @@
+{
+  "schema": "ods.dev/review-verdict/v1",
+  "reviewer": { "tool": "claude-code", "model": "claude-sonnet-4-5" },
+  "verdict": "request_changes",
+  "findings": [
+    {
+      "file": "scripts/generate-report.py",
+      "line": 60,
+      "severity": "medium",
+      "category": "correctness",
+      "message": "Self-test fixture: verify request_changes routes the review tier without blocking"
+    }
+  ]
+}

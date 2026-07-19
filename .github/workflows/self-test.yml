@@ -9,7 +9,7 @@ jobs:
   test-report-generator:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - name: Install test dependencies
         run: pip install pytest
       - name: Run generate-report.py unit tests
@@ -25,7 +25,7 @@ jobs:
       GOPROXY: direct
       GOSUMDB: "off"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
@@ -183,6 +183,44 @@ jobs:
           test "${{ steps.routing.outputs.review-tier }}" = "elevated"
           grep -q '"review_tier": "elevated"' ods-report/check.json
           echo "Review tier routed and exposed ✓"
+
+      - name: Pipeline with AI review verdict (routes elevated, never blocks)
+        id: aireview
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          # Exercises the pinned default CLI — bump breakages surface here.
+          ai-review: test-fixtures/ai-review-request-changes.json
+          artifact-name: ods-report-aireview
+          comment: "false"
+
+      - name: Verify AI review verdict routed but did not block
+        run: |
+          test "${{ steps.aireview.outputs.review-tier }}" = "elevated"
+          test "${{ steps.aireview.outputs.result }}" != "block"
+          grep -q '"ai_reviews"' ods-report/ods-report.json
+          grep -q "AI Review" ods-report/ods-summary.md
+          echo "AI review verdict routed to elevated without blocking ✓"
+
+      - name: Pipeline with AI review on a CLI that predates the flag
+        id: aireview-oldcli
+        uses: ./
+        with:
+          diff-base: HEAD~1
+          # v0.6.0 predates --ai-review: the input must be skipped with a
+          # warning, never break the gate.
+          cli-ref: v0.6.0
+          ai-review: test-fixtures/ai-review-request-changes.json
+          artifact-name: ods-report-aireview-oldcli
+          comment: "false"
+
+      - name: Verify old CLI degraded gracefully
+        run: |
+          test "${{ steps.aireview-oldcli.outputs.result }}" != "block"
+          # The verdict never entered this run, so its report must not show
+          # one — including leftovers from the previous invocation above.
+          ! grep -q "AI Review" ods-report/ods-summary.md
+          echo "ai-review input skipped safely on a pre---ai-review CLI ✓"
 
       - name: Pipeline with flag-like tokens in PR body (argument injection)
         id: flagbody

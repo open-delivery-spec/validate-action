@@ -16,7 +16,7 @@ AI writes code faster than ever, but AI code increases technical debt in predict
 | **Hallucinated APIs** | AI invents functions, packages, endpoints that don’t exist |
 | **Redundant error handling** | 3+ identical `if err != nil` blocks in the same function |
 | **Over-commenting** | 35%+ comment-to-code ratio with self-explanatory comments |
-| **Missing tests** | AI PRs average 22% test coverage vs 68% for human PRs |
+| **Missing tests** | AI-generated PRs often ship with little or no accompanying tests |
 | **Invisible AI code** | Teams can’t distinguish AI-generated from human-written changes |
 
 This Action runs the full ODS pipeline on every PR so low-quality AI code never reaches production.
@@ -48,7 +48,7 @@ jobs:
 That’s it. The Action automatically:
 
 1. **Attributes** AI-generated code (`Co-Authored-By` trailers, PR disclosure, branch names, diff heuristics)
-2. **Analyzes** code quality (5 rule categories for AI-specific defects)
+2. **Analyzes** code quality (built-in rules for AI-specific defects, plus any external analyzer via SARIF)
 3. **Scores** technical debt impact (5-dimension weighted model)
 4. **Enforces** policy (OPA Rego — optional, place at `.ods/policy.rego`)
 
@@ -88,14 +88,14 @@ Pin the Action to a major tag so you receive fixes without breaking changes:
 ```
 
 > **Note on the CLI it installs.** By default the Action installs a **pinned
-> stable release** of the ODS CLI (`cli-ref: v0.5.0`) so runs are reproducible.
+> stable release** of the ODS CLI (`cli-ref: v0.7.1`) so runs are reproducible.
 > To always track the latest detection and analysis improvements, set it to
 > `main` (or any tag/commit):
 >
 > ```yaml
 > - uses: open-delivery-spec/validate-action@v1
 >   with:
->     cli-ref: main   # latest; or a specific tag/commit like v0.5.0
+>     cli-ref: main   # latest; or a specific tag/commit like v0.7.1
 > ```
 
 ---
@@ -114,7 +114,7 @@ No configuration required — if your team uses any of these tools, AI attributi
 
 The [Linux kernel coding-assistants convention](https://docs.kernel.org/process/coding-assistants.html) is recognized as an equally strong disclosure — `Assisted-by: Claude:claude-3-opus coccinelle` attributes the commit to `Claude` with the model version surfaced in the evidence.
 
-Repos using [git-ai](https://github.com/git-ai-project/git-ai) get the highest-fidelity signal: the Action fetches its `refs/notes/ai` authorship logs automatically (best effort) and the CLI *measures* per-file AI lines from them instead of estimating — with the agent and model named in the evidence. Requires a CLI release newer than v0.5.0 (`cli-ref: main` until then); repos without git-ai are unaffected.
+Repos using [git-ai](https://github.com/git-ai-project/git-ai) get the highest-fidelity signal: the Action fetches its `refs/notes/ai` authorship logs automatically (best effort) and the CLI *measures* per-file AI lines from them instead of estimating — with the agent and model named in the evidence. Repos without git-ai are unaffected.
 
 ODS also reads supplemental ODS-specific trailer fields (`AI-assisted: true`, `AI-tool: name`) for teams that add them, but `Co-Authored-By` is sufficient on its own.
 
@@ -202,6 +202,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `sarif` | No | — | SARIF file from an external analyzer to merge ([details](#authoritative-analysis-bring-your-own-scanner-sarif)) |
 | `semgrep` | No | `false` | Run Semgrep automatically and merge its findings (ignored when `sarif` is set) |
 | `semgrep-config` | No | `auto` | Semgrep ruleset when `semgrep: true` (registry ID or local rules file) |
+| `ai-review` | No | — | Path(s) to AI reviewer verdict files, newline- or comma-separated ([details](#ai-review-verdicts-semantic-review-as-gate-input)) |
 | `report` | No | `false` | Append an AI attribution digest to the summary/comment/artifact ([details](#periodic-ai-attribution-digest)) |
 | `report-since` | No | `90 days ago` | History window for the attribution digest (any git `--since` expression) |
 | `summary` | No | `true` | Append report to job summary |
@@ -213,7 +214,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `artifact-name` | No | `ods-report` | Uploaded artifact name |
 | `artifact-retention-days` | No | `30` | Artifact retention period |
 | `github-token` | No | `${{ github.token }}` | Token for PR comments |
-| `cli-ref` | No | `v0.5.0` | ODS CLI version/tag/commit (`main` for latest) |
+| `cli-ref` | No | `v0.7.1` | ODS CLI version/tag/commit (`main` for latest) |
 
 ## Outputs
 
@@ -450,6 +451,62 @@ for the `review_tier` Rego contract and example rules.
 
 ---
 
+## AI Review Verdicts: Semantic Review as Gate Input
+
+Static analysis catches rule violations; an AI code reviewer judges whether
+the change is *correct* — edge cases, logic, intent. The `ai-review` input
+feeds those opinions into the policy gate without letting them take it over:
+
+```yaml
+- name: AI code review
+  run: |
+    # Any reviewer works — it just has to write a review-verdict/v1 file:
+    # https://github.com/open-delivery-spec/spec/blob/main/schemas/review-verdict/v1.json
+    your-ai-reviewer --output ai-review.json
+
+- uses: open-delivery-spec/validate-action@v1
+  with:
+    ai-review: ai-review.json          # newline/comma-separated for several
+    review-routing: "true"             # act on the elevated tier
+```
+
+The verdict file:
+
+```json
+{
+  "schema": "ods.dev/review-verdict/v1",
+  "reviewer": { "tool": "claude-code", "model": "claude-sonnet-4-5" },
+  "head_sha": "${{ github.event.pull_request.head.sha }}",
+  "verdict": "request_changes",
+  "findings": [
+    { "file": "src/auth.py", "line": 42, "severity": "high",
+      "category": "correctness", "message": "expiry check uses local time" }
+  ]
+}
+```
+
+Semantics — the same principle as everywhere in ODS: **deterministic findings
+may deny; probabilistic opinions only route attention.**
+
+- A `request_changes` verdict raises the review tier to `elevated` (label +
+  requested reviewers with `review-routing: true`) and adds a warning. It
+  never fails the run.
+- An `approve` never loosens the gate — it cannot qualify a PR for the `auto`
+  tier. A prompt-injected or over-optimistic reviewer can cost you a little
+  extra review attention, never a bad merge.
+- Teams that want AI findings to block opt in explicitly in their own Rego
+  over `input.ai_reviews` — see the
+  [CLI docs](https://github.com/open-delivery-spec/cli#ai-reviewer-verdicts---ai-review).
+- Verdicts stamped with a `head_sha` that doesn't match the PR head are
+  skipped as stale (the action sets `ODS_HEAD_SHA` from the event, so this
+  works on `pull_request` merge-commit checkouts too). Malformed files are
+  skipped with a warning.
+
+The verdicts render as an **AI Review** section in the PR comment and job
+summary, and are preserved in the report artifact as audit evidence.
+
+---
+
 ## Disabling Surfaces
 
 Turn off specific display surfaces when you only want validation:
@@ -481,7 +538,7 @@ If your workflow doesn’t have access to `github.event.pull_request.body`:
 
 ## In Production
 
-This Action runs on every PR in the `open-delivery-spec` org (dogfooding) and is pending adoption in external repositories. See [ADOPTERS.md](https://github.com/open-delivery-spec/spec/blob/main/ADOPTERS.md) for the current list.
+This Action runs on every PR in the `open-delivery-spec` org (dogfooding) and in external repositories including [devops-maturity](https://github.com/devops-maturity/devops-maturity) and [conventional-branch](https://github.com/conventional-branch/conventional-branch). See [ADOPTERS.md](https://github.com/open-delivery-spec/spec/blob/main/ADOPTERS.md) for the current list.
 
 ---
 
