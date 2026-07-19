@@ -245,11 +245,8 @@ def main():
             "denials": denials,
             "warnings": warnings_list,
         },
-<<<<<<< HEAD
         "risk_brief": risk_brief,
-=======
         "ai_reviews": ai_reviews,
->>>>>>> origin/main
     }
 
     with open(os.path.join(report_dir, "ods-report.json"), "w") as f:
@@ -274,11 +271,8 @@ def main():
         denials=denials,
         warnings_list=warnings_list,
         files=files,
-<<<<<<< HEAD
         risk_brief=risk_brief,
-=======
         ai_reviews=ai_reviews,
->>>>>>> origin/main
     )
 
     summary_path = os.path.join(report_dir, "ods-summary.md")

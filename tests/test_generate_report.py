@@ -461,7 +461,6 @@ class TestReviewTier:
         assert "**Review Tier:**" not in md
 
 
-<<<<<<< HEAD
 # ── Risk brief behavior ────────────────────────────────────────────────────────
 
 class TestRiskBrief:
@@ -481,7 +480,8 @@ class TestRiskBrief:
         _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
         assert report["risk_brief"]["level"] == "low"
         assert "Low review risk" in report["risk_brief"]["recommended_action"]
-=======
+
+
 # ── AI review verdicts ────────────────────────────────────────────────────────
 
 _VERDICT_RC = {
@@ -532,4 +532,3 @@ class TestAIReviewSection:
         result, _, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW,
                                extra_files={"ai-review-0.json": _VERDICT_RC})
         assert result == "pass"
->>>>>>> origin/main
