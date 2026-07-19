@@ -132,10 +132,6 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 > **AI Detected:** 👤 No (confidence: 0%)  
 > **Tech Debt Delta:** +0.3 (neutral)  
 > **Policy:** ✅ Allowed  
->  
-> ### 🧭 Risk Brief
-> **Risk Level:** 🟢 low  
-> **Review Action:** Low review risk. Proceed with normal approval flow.
 >
 > ### 🔍 Detection
 > No AI code detected.
@@ -160,10 +156,6 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 > **AI Detected:** 🤖 Yes (confidence: 85%)  
 > **Tech Debt Delta:** +4.2 (increase)  
 > **Policy:** ✅ Allowed  
->  
-> ### 🧭 Risk Brief
-> **Risk Level:** 🟠 medium  
-> **Review Action:** Run standard human review; verify tests and high-impact logic paths.
 >
 > ### 🔍 Detection
 > | Source | Signal | Confidence |
@@ -179,10 +171,6 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 
 > **Gate Result:** ❌ BLOCK  
 > **Policy:** ❌ Blocked  
->
-> ### 🧭 Risk Brief
-> **Risk Level:** 🔴 high  
-> **Review Action:** Block merge. Fix denials, then require elevated human review.
 >
 > ### 🚫 Policy Denials
 > - ❌ AI code with low test coverage
@@ -205,6 +193,10 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `ai-review` | No | — | Path(s) to AI reviewer verdict files, newline- or comma-separated ([details](#ai-review-verdicts-semantic-review-as-gate-input)) |
 | `report` | No | `false` | Append an AI attribution digest to the summary/comment/artifact ([details](#periodic-ai-attribution-digest)) |
 | `report-since` | No | `90 days ago` | History window for the attribution digest (any git `--since` expression) |
+| `calibration` | No | `false` | Compute risk-tier calibration from merged PR outcomes labeled `ods:outcome/*` |
+| `calibration-window-days` | No | `30` | Lookback window for calibration sampling |
+| `calibration-min-samples` | No | `20` | Minimum labeled samples before tuning recommendations |
+| `calibration-summary` | No | `false` | Append calibration summary to job summary / PR comment |
 | `summary` | No | `true` | Append report to job summary |
 | `comment` | No | `true` | Post/update PR comment |
 | `review-routing` | No | `false` | Label the PR with its review tier; request reviewers for `elevated` ([details](#review-routing-spend-review-attention-where-it-matters)) |
@@ -239,7 +231,12 @@ ods-report/
 ├── ods-badge.svg       (badge showing result)
 ├── attribution.json    (only with report: true — raw ods report output)
 └── ods-attribution.md  (only with report: true — rendered digest)
+├── calibration.json    (only with calibration: true — confusion matrix + metrics)
+└── ods-calibration.md  (only with calibration: true — rendered calibration summary)
 ```
+
+> ODS always embeds a hidden `<!-- ods-calibration ... -->` marker in its PR
+> comment so merged outcomes can be compared against prior predictions.
 
 ---
 
@@ -282,6 +279,35 @@ jobs:
 
 Like all detection in ODS, this is **attribution from `Co-Authored-By` trailers**
 — what AI tools disclose, not forensic detection.
+
+---
+
+## Risk-Tier Calibration Loop (merge outcome feedback)
+
+Enable `calibration: true` to compute how well ODS risk predictions align with
+real merged outcomes in the same repository.
+
+```yaml
+- uses: open-delivery-spec/validate-action@v1
+  with:
+    calibration: true
+    calibration-window-days: "30"
+    calibration-min-samples: "20"
+    calibration-summary: false
+```
+
+How feedback works:
+
+1. ODS writes a hidden prediction marker into each PR comment (`ods-calibration`).
+2. After merge, maintainers label the PR with an outcome:
+   - `ods:outcome/clean` or `ods:outcome/low`
+   - `ods:outcome/rework` or `ods:outcome/medium`
+   - `ods:outcome/incident`, `ods:outcome/hotfix`, `ods:outcome/revert`, or `ods:outcome/high`
+3. The calibration report builds a confusion matrix (predicted vs actual) and
+   emits recommendations for tightening/relaxing routing thresholds.
+
+This keeps risk routing honest over time: if high-risk recall drops, routing
+gets stricter; if false alarms are too high, routing can be relaxed.
 
 ---
 

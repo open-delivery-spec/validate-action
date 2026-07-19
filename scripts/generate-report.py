@@ -128,6 +128,13 @@ def aggregate_detection_evidence(evidence):
     return grouped
 
 
+def predicted_risk_from_tier(review_tier, detect_error):
+    if detect_error:
+        return "high"
+    tier = str(review_tier or "standard").lower()
+    return {"auto": "low", "standard": "medium", "elevated": "high"}.get(tier, "medium")
+
+
 def build_risk_brief(
     *,
     policy_allowed,
@@ -205,6 +212,18 @@ def build_risk_brief(
     }
 
 
+def build_calibration_marker(*, review_tier, detect_error, tech_debt, ai_confidence, policy_allowed):
+    payload = {
+        "version": 1,
+        "predicted_tier": str(review_tier or "standard"),
+        "predicted_risk": predicted_risk_from_tier(review_tier, detect_error),
+        "gate_result": "pass" if policy_allowed else "block",
+        "ai_confidence": round(float(ai_confidence or 0), 4),
+        "tech_debt_delta": round(float(tech_debt or 0), 4),
+    }
+    return f"<!-- ods-calibration {json.dumps(payload, separators=(',', ':'))} -->"
+
+
 def main():
     report_dir = sys.argv[1]
     github_output = sys.argv[2] if len(sys.argv) > 2 else ""
@@ -253,6 +272,13 @@ def main():
         warnings_list=warnings_list,
         issues=issues,
         score_breakdown=score_breakdown,
+    )
+    calibration_marker = build_calibration_marker(
+        review_tier=review_tier,
+        detect_error=detect_error,
+        tech_debt=tech_debt,
+        ai_confidence=ai_confidence,
+        policy_allowed=policy_allowed,
     )
 
     # Determine gate result (merge gate status only).
@@ -307,6 +333,7 @@ def main():
             "warnings": warnings_list,
         },
         "risk_brief": risk_brief,
+        "calibration_marker": calibration_marker,
         "ai_reviews": ai_reviews,
     }
 
@@ -334,6 +361,7 @@ def main():
         warnings_list=warnings_list,
         files=files,
         risk_brief=risk_brief,
+        calibration_marker=calibration_marker,
         ai_reviews=ai_reviews,
     )
 
@@ -391,6 +419,7 @@ def build_markdown(**kw):
     policy_label = "\u2705 Allowed" if kw["policy_allowed"] else "\u274c Blocked"
     lines = [
         "<!-- ods-compliance-report -->",
+        kw.get("calibration_marker", ""),
         "## ODS AI Code Quality Report",
         "",
         f"**Gate Result:** {kw['overall']}  ",
@@ -402,22 +431,6 @@ def build_markdown(**kw):
         tier = kw.get("review_tier", "standard")
         tier_icon = {"auto": "\U0001f7e2", "standard": "\U0001f535", "elevated": "\U0001f7e0"}.get(tier, "")
         lines.append(f"**Review Tier:** {tier_icon} {tier}  ")
-    lines.append("")
-    risk = kw.get("risk_brief", {})
-    risk_level = str(risk.get("level", "medium")).lower()
-    risk_icon = {"high": "🔴", "medium": "🟠", "low": "🟢"}.get(risk_level, "🟠")
-    lines.extend([
-        "### 🧭 Risk Brief",
-        "",
-        f"**Risk Level:** {risk_icon} {risk_level}  ",
-        f"**Review Action:** {risk.get('recommended_action', 'Standard review recommended')}  ",
-    ])
-    reasons = risk.get("reasons", [])
-    if reasons:
-        lines.append("")
-        lines.append("**Why this level:**")
-        for reason in reasons:
-            lines.append(f"- {reason}")
     lines.append("")
 
     # Detection
@@ -596,10 +609,6 @@ def build_html(**kw):
         for i in kw["issues"][:20]
     ) or '<tr><td colspan="4" class="empty">No quality issues detected.</td></tr>'
     b = kw["score"].get("breakdown", {})
-    risk = kw.get("risk_brief", {})
-    risk_level = str(risk.get("level", "medium")).lower()
-    risk_badge = {"high": "🔴 HIGH", "medium": "🟠 MEDIUM", "low": "🟢 LOW"}.get(risk_level, "🟠 MEDIUM")
-    risk_reasons = "".join(f"<li>{h(r)}</li>" for r in (risk.get("reasons") or []))
     result_value = kw["result_value"]
     overall_text = {"pass": "✅ PASS", "warn": "⚠️ WARN", "block": "❌ BLOCK"}.get(
         result_value, h(kw["overall"])
@@ -680,13 +689,6 @@ def build_html(**kw):
     <div class="sub">{h(kw['verdict'])}</div></div>
   <div class="card"><div class="label">Policy</div>
     <div class="value">{'✅ Allowed' if kw['policy_allowed'] else '❌ Blocked'}</div></div>
-  <div class="card"><div class="label">Risk Brief</div>
-    <div class="value">{risk_badge}</div>
-    <div class="sub">{h(risk.get('recommended_action', 'Standard review recommended'))}</div></div>
-</div>
-
-<div class="section"><h2>🧭 Risk Brief</h2>
-<ul>{risk_reasons or '<li>No strong risk signals detected.</li>'}</ul>
 </div>
 
 <div class="section"><h2>🔍 Detection Evidence</h2>

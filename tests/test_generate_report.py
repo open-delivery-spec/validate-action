@@ -294,6 +294,11 @@ class TestReportJson:
         assert isinstance(rb["reasons"], list)
         assert rb["recommended_action"]
 
+    def test_calibration_marker_present(self):
+        marker = self.report.get("calibration_marker", "")
+        assert marker.startswith("<!-- ods-calibration ")
+        assert marker.endswith(" -->")
+
 
 # ── build_markdown ────────────────────────────────────────────────────────────
 
@@ -315,7 +320,7 @@ class TestBuildMarkdown:
     def test_html_comment_marker_present(self):
         md = gr.build_markdown(**_MD_BASE)
         assert "<!-- ods-compliance-report -->" in md
-        assert "Risk Brief" in md
+        assert "Risk Brief" not in md
 
     def test_coverage_not_measured_shows_na(self):
         md = gr.build_markdown(**_MD_BASE)
@@ -413,7 +418,6 @@ class TestBuildHtml:
         out = gr.build_html(**_HTML_BASE)
         assert "<!DOCTYPE html>" in out
         assert "</html>" in out
-        assert "Risk Brief" in out
 
     def test_coverage_not_measured_shows_na(self):
         out = gr.build_html(**_HTML_BASE)
@@ -509,7 +513,7 @@ class TestRiskBrief:
         check = {"allowed": False, "denials": ["critical policy fail"], "warnings": []}
         _, report, md, _ = _run(detect, analyze, _S_NEUTRAL, check)
         assert report["risk_brief"]["level"] == "high"
-        assert "Risk Level" in md and "high" in md.lower()
+        assert "Risk Level" not in md
 
     def test_clean_human_pr_is_low_risk(self):
         _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
@@ -525,7 +529,7 @@ class TestRiskBrief:
         assert report["risk_brief"]["level"] == "medium"
         joined = " ".join(report["risk_brief"]["reasons"])
         assert "low debt" in joined
-        assert "Risk Level" in md and "medium" in md.lower()
+        assert "Risk Level" not in md
 
 
 # ── AI review verdicts ────────────────────────────────────────────────────────
