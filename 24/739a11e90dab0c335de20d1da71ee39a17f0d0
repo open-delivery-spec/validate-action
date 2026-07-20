@@ -1,0 +1,29 @@
+README.md
+  s_02a665f2fc66f9::t_d4ba3ee0628352 196-199,234-235,238-240,285-313
+action.yml
+  s_02a665f2fc66f9::t_9e2700a23458a0 83-105,457-499
+scripts/calibrate-risk.py
+  s_02a665f2fc66f9::t_9a8adef19217e1 1-235
+scripts/generate-report.py
+  s_02a665f2fc66f9::t_64bed0110a014c 131-137,215-226,276-282,336,364,422
+tests/test_calibrate_risk.py
+  s_02a665f2fc66f9::t_653ab148400382 1-78
+tests/test_generate_report.py
+  s_02a665f2fc66f9::t_e14dc92bc7bc91 297-301,323,516,532
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "24739a11e90dab0c335de20d1da71ee39a17f0d0",
+  "prompts": {},
+  "sessions": {
+    "s_02a665f2fc66f9": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "a0ba9f99-3953-4672-b6ef-d93534e62d43",
+        "model": "unknown"
+      },
+      "human_author": "shenxianpeng <xianpeng.shen@gmail.com>"
+    }
+  }
+}
