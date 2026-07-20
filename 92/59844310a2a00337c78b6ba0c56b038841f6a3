@@ -1,0 +1,25 @@
+README.md
+  s_02a665f2fc66f9::t_a108553bd60470 135-138,163-166,183-185
+  s_02a665f2fc66f9::t_ef09b359299a46 186
+scripts/generate-report.py
+  s_02a665f2fc66f9::t_10cb9004646a83 120
+  s_02a665f2fc66f9::t_74a9443d590f01 58-119,121-141,168-181,231,239,264,297,332-347,474-477,558-564
+tests/test_generate_report.py
+  s_02a665f2fc66f9::t_ffcb11314fe371 248,261-266,288,376,456-476
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "9259844310a2a00337c78b6ba0c56b038841f6a3",
+  "prompts": {},
+  "sessions": {
+    "s_02a665f2fc66f9": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "a0ba9f99-3953-4672-b6ef-d93534e62d43",
+        "model": "unknown"
+      },
+      "human_author": "shenxianpeng <xianpeng.shen@gmail.com>"
+    }
+  }
+}
