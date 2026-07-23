@@ -141,8 +141,7 @@ jobs:
           diff-base: HEAD~1
           report: "true"
           report-since: "365 days ago"
-          # --html dashboard needs a CLI newer than the pinned default (v0.7.2+).
-          cli-ref: main
+          # Exercises the pinned default CLI, which now ships --html (v0.7.2+).
           artifact-name: ods-report-attribution
           comment: "false"
 
