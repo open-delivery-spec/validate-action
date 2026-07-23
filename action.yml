@@ -419,6 +419,17 @@ runs:
         fi
         MD=$(python3 "$ACTION_DIR/scripts/render-attribution.py" "$OUT_DIR/attribution.json") || {
           echo "::warning::could not render attribution digest"; echo "::endgroup::"; exit 0; }
+
+        # Shareable HTML dashboard (ods report --html, v0.7.2+). Best effort:
+        # older CLIs lack the flag, so guard on it and never fail the step. The
+        # file lands in the report dir and rides along in the uploaded artifact.
+        if ods report --help 2>&1 | grep -q -- '--html'; then
+          if ods report --since "$REPORT_SINCE" --html "$OUT_DIR/ai-attribution.html" >/dev/null 2>&1; then
+            MD="${MD}"$'\n\n📊 An interactive AI-attribution dashboard (`ai-attribution.html`) is included in the ODS report artifact — download it and open in a browser.'
+            echo "AI attribution dashboard written to $OUT_DIR/ai-attribution.html"
+          fi
+        fi
+
         printf '%s\n' "$MD" > "$OUT_DIR/ods-attribution.md"
         # Append to the shared summary so it also reaches the PR comment.
         if [ -f "$OUT_DIR/ods-summary.md" ]; then
