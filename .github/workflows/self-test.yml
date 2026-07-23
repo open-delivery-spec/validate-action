@@ -141,15 +141,21 @@ jobs:
           diff-base: HEAD~1
           report: "true"
           report-since: "365 days ago"
+          # --html dashboard needs a CLI newer than the pinned default (v0.7.2+).
+          cli-ref: main
           artifact-name: ods-report-attribution
           comment: "false"
 
-      - name: Verify attribution digest rendered
+      - name: Verify attribution digest and dashboard rendered
         run: |
           test -f ods-report/attribution.json
           test -f ods-report/ods-attribution.md
           grep -q "AI Attribution" ods-report/ods-attribution.md
-          echo "AI attribution digest rendered ✓"
+          # Shareable HTML dashboard produced and pointed to from the digest.
+          test -f ods-report/ai-attribution.html
+          grep -q "<svg" ods-report/ai-attribution.html
+          grep -q "ai-attribution.html" ods-report/ods-attribution.md
+          echo "AI attribution digest + dashboard rendered ✓"
 
       - name: Pipeline without PR comment or artifact
         uses: ./

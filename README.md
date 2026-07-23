@@ -238,6 +238,11 @@ and changed-line share over a window, with a per-tool breakdown — to the job
 summary, the PR comment, and the artifact. It answers "how much of our delivery
 is AI-assisted, and trending which way?"
 
+With a CLI that supports it (v0.7.2+), the step also drops a self-contained,
+shareable **HTML dashboard** (`ai-attribution.html` — hero metrics, an "AI share
+over time" trend chart, per-tool bars) into the report artifact, and the PR
+comment points to it.
+
 ```yaml
 - uses: actions/checkout@v7
   with:
