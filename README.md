@@ -448,20 +448,31 @@ for the `review_tier` Rego contract and example rules.
 
 Static analysis catches rule violations; an AI code reviewer judges whether
 the change is *correct* — edge cases, logic, intent. The `ai-review` input
-feeds those opinions into the policy gate without letting them take it over:
+feeds those opinions into the policy gate without letting them take it over.
+
+**Get started in one job** with the reference recipe in
+[`examples/ai-review/`](examples/ai-review/) — a prompt plus a tolerant
+normalizer (`scripts/to-verdict.py`) that turns any LLM's best-effort output
+into a schema-valid verdict. Bring your own model and key:
 
 ```yaml
 - name: AI code review
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
   run: |
-    # Any reviewer works — it just has to write a review-verdict/v1 file:
-    # https://github.com/open-delivery-spec/spec/blob/main/schemas/review-verdict/v1.json
-    your-ai-reviewer --output ai-review.json
+    git diff origin/${{ github.base_ref }}...HEAD > pr.diff
+    claude -p "$(cat examples/ai-review/review-prompt.md)" < pr.diff > raw.txt || true
+    python3 scripts/to-verdict.py raw.txt --tool claude-code \
+      --head-sha "${{ github.event.pull_request.head.sha }}" --out ai-review.json
 
 - uses: open-delivery-spec/validate-action@v1
   with:
     ai-review: ai-review.json          # newline/comma-separated for several
     review-routing: "true"             # act on the elevated tier
 ```
+
+Any reviewer works — it just has to emit a `review-verdict/v1` file. Swap the
+review step for CodeRabbit, Copilot code review, or your own converter.
 
 The verdict file:
 
