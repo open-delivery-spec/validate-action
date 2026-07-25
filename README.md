@@ -126,7 +126,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 
 ### PR Comment (auto-posted)
 
-> ## ODS AI Code Quality Report
+> ## ODS AI Code Report
 >
 > **Result:** ✅ PASS  
 > **AI Detected:** 👤 No (confidence: 0%)  
