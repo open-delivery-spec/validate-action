@@ -1,5 +1,5 @@
 name: Open Delivery Spec
-description: AI code quality gate — detect AI code, analyze quality, score tech debt, enforce policy
+description: Governance and visibility for AI-assisted code — attribute, analyze, score, and enforce policy on every PR
 author: Open Delivery Spec Contributors
 branding:
   icon: check-circle

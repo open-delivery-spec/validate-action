@@ -3,7 +3,7 @@
 [![ODS Validate](https://github.com/open-delivery-spec/validate-action/actions/workflows/ods-validate.yml/badge.svg)](https://github.com/open-delivery-spec/validate-action/actions/workflows/ods-validate.yml)
 [![CI](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml/badge.svg)](https://github.com/open-delivery-spec/validate-action/actions/workflows/self-test.yml)
 
-> **Zero-config AI code quality gate for teams using Claude Code, Copilot, or Cursor.** These tools already stamp `Co-Authored-By` trailers on every commit, so ODS attributes AI-generated code automatically in CI — then analyzes quality, scores technical debt, and enforces policy on every PR. No disclosure forms, no manual tagging.
+> **Zero-config governance and visibility for AI-assisted code — on every pull request.** Claude Code, Copilot, and Cursor already stamp `Co-Authored-By` trailers on every commit, so ODS shows how much of your delivery is AI-assisted, routes review attention to the changes that need it, and enforces your policy in CI — no disclosure forms, no manual tagging. It governs the AI you can see; it's a signal producer, not a quality oracle.
 
 ---
 
