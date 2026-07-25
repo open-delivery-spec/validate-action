@@ -227,7 +227,7 @@ def build_markdown(**kw):
     policy_label = "\u2705 Allowed" if kw["policy_allowed"] else "\u274c Blocked"
     lines = [
         "<!-- ods-compliance-report -->",
-        "## ODS AI Code Quality Report",
+        "## ODS AI Code Report",
         "",
         f"**Result:** {kw['overall']}  ",
         f"**AI Detected:** {ai_label} (confidence: {kw['ai_confidence']*100:.0f}%)  ",
@@ -431,7 +431,7 @@ def build_html(**kw):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ODS AI Code Quality Report</title>
+<title>ODS AI Code Report</title>
 <style>
   :root {{ --bg:#0d1117; --panel:#161b22; --border:#30363d; --fg:#c9d1d9; --muted:#8b949e; --fg-strong:#f0f6fc;
            --pass:#2ea043; --warn:#d29922; --block:#cf222e; --accent:#58a6ff; }}
@@ -477,7 +477,7 @@ def build_html(**kw):
 <body>
 <header>
   <div>
-    <h1>ODS AI Code Quality Report</h1>
+    <h1>ODS AI Code Report</h1>
     <div class="sub">Detect · Analyze · Score · Enforce</div>
   </div>
   <div class="result {result_value}">{overall_text}</div>
