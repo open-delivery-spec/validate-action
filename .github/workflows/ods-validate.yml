@@ -22,7 +22,7 @@ jobs:
       # code, and adopters pinned to a released tag are unaffected.
       GOSUMDB: "off"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
@@ -33,7 +33,7 @@ jobs:
           commit-check --message --branch
 
       - name: ODS AI code quality gate
-        uses: open-delivery-spec/validate-action@9ad36c25b34884d11b1277d4728efbfef7f06c46 # v1
+        uses: open-delivery-spec/validate-action@e713fdd1bfea1e11a007e3b543b78b912425ee58 # v1
         with:
           diff-base: ${{ github.event.pull_request.base.sha || 'origin/main' }}
           branch: ${{ github.head_ref }}
