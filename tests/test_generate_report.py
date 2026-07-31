@@ -538,3 +538,34 @@ class TestMergeConfidenceSection:
         check = {**_C_ALLOW, "merge_confidence": {"added_source_without_tests": True}}
         result, _, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
         assert result == "pass"
+
+    def test_patch_coverage_rendered_when_measured(self):
+        check = {**_C_ALLOW,
+                 "merge_confidence": {"tests_touched": True, "added_source_without_tests": False},
+                 "patch_coverage": 0.4}
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert "Patch coverage (added lines)" in md
+        assert "40%" in md
+        assert report["patch_coverage"] == 0.4
+
+    def test_patch_coverage_absent_when_not_measured(self):
+        # -1 sentinel: not measured → no patch-coverage row.
+        check = {**_C_ALLOW,
+                 "merge_confidence": {"tests_touched": True},
+                 "patch_coverage": -1}
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert "Patch coverage (added lines)" not in md
+        assert report["patch_coverage"] == -1
+
+    def test_patch_coverage_section_shown_without_merge_confidence(self):
+        # Even if merge_confidence is empty, a measured patch coverage renders
+        # the Merge Confidence section.
+        check = {**_C_ALLOW, "patch_coverage": 0.9}
+        _, _, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert "Merge Confidence" in md
+        assert "90%" in md
+
+    def test_patch_coverage_never_changes_result(self):
+        check = {**_C_ALLOW, "patch_coverage": 0.1}
+        result, _, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert result == "pass"
