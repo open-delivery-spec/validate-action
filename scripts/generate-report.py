@@ -89,6 +89,9 @@ def main():
     # Deterministic merge-confidence facts the gate saw (echoed by ods check
     # --json; absent on older CLIs). {} when unavailable.
     merge_confidence = check.get("merge_confidence") or {}
+    # Patch (diff) coverage of the change's added lines. Echoed top-level by
+    # ods check --json; -1 or None means not measured (absent on older CLIs).
+    patch_coverage = check.get("patch_coverage")
     issues = analyze.get("issues", [])
     files = detect.get("files", [])
     evidence = detect.get("evidence", [])
@@ -152,6 +155,7 @@ def main():
         },
         "ai_reviews": ai_reviews,
         "merge_confidence": merge_confidence,
+        "patch_coverage": patch_coverage,
     }
 
     with open(os.path.join(report_dir, "ods-report.json"), "w") as f:
@@ -178,6 +182,7 @@ def main():
         files=files,
         ai_reviews=ai_reviews,
         merge_confidence=merge_confidence,
+        patch_coverage=patch_coverage,
     )
 
     summary_path = os.path.join(report_dir, "ods-summary.md")
@@ -292,7 +297,9 @@ def build_markdown(**kw):
     # work? touches sensitive paths?). Echoed by ods check --json; absent on
     # older CLIs, in which case this section is skipped.
     mc = kw.get("merge_confidence") or {}
-    if mc:
+    patch_coverage = kw.get("patch_coverage")
+    patch_measured = isinstance(patch_coverage, (int, float)) and patch_coverage >= 0
+    if mc or patch_measured:
         tests_icon = "✅" if mc.get("tests_touched") else "⚠️"
         risky = mc.get("risky_paths") or []
         lines.extend([
@@ -303,9 +310,16 @@ def build_markdown(**kw):
             "|--------|-------|",
             f"| Tests touched | {tests_icon} {'yes' if mc.get('tests_touched') else 'no'} |",
             f"| Source added without tests | {'⚠️ yes' if mc.get('added_source_without_tests') else '✅ no'} |",
-            f"| Files changed | {mc.get('files_changed', 0)} ({mc.get('source_files_changed', 0)} source, {mc.get('test_files_changed', 0)} test) |",
-            f"| Sensitive paths touched | {len(risky)} |",
         ])
+        if patch_measured:
+            pct = round(patch_coverage * 100)
+            patch_icon = "✅" if patch_coverage >= 0.8 else "⚠️"
+            lines.append(f"| Patch coverage (added lines) | {patch_icon} {pct}% |")
+        if mc:
+            lines.append(
+                f"| Files changed | {mc.get('files_changed', 0)} ({mc.get('source_files_changed', 0)} source, {mc.get('test_files_changed', 0)} test) |"
+            )
+            lines.append(f"| Sensitive paths touched | {len(risky)} |")
         if risky:
             for p in risky[:10]:
                 lines.append(f"| ↳ | `{md_cell(p)}` |")
