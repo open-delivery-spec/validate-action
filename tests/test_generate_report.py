@@ -503,3 +503,38 @@ class TestAIReviewSection:
         result, _, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW,
                                extra_files={"ai-review-0.json": _VERDICT_RC})
         assert result == "pass"
+
+
+# ── Merge-confidence section ──────────────────────────────────────────────────
+
+class TestMergeConfidenceSection:
+    def test_rendered_from_check_output(self):
+        check = {**_C_ALLOW, "merge_confidence": {
+            "files_changed": 1, "source_files_changed": 1, "test_files_changed": 0,
+            "net_added_lines": 40, "tests_touched": False,
+            "added_source_without_tests": True, "risky_paths": [".github/workflows/ci.yml"],
+        }}
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert "Merge Confidence" in md
+        assert "Source added without tests" in md
+        assert ".github/workflows/ci.yml" in md
+        assert report["merge_confidence"]["added_source_without_tests"] is True
+
+    def test_absent_when_check_has_none(self):
+        # Older CLIs don't echo merge_confidence — the section is skipped.
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert "Merge Confidence" not in md
+        assert report["merge_confidence"] == {}
+
+    def test_pipe_in_risky_path_escaped(self):
+        check = {**_C_ALLOW, "merge_confidence": {
+            "files_changed": 1, "tests_touched": True,
+            "added_source_without_tests": False, "risky_paths": ["weird|name.tf"],
+        }}
+        _, _, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert "weird\\|name.tf" in md
+
+    def test_never_changes_result(self):
+        check = {**_C_ALLOW, "merge_confidence": {"added_source_without_tests": True}}
+        result, _, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert result == "pass"

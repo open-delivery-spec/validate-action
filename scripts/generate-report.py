@@ -86,6 +86,9 @@ def main():
     review_tier = check.get("review_tier") or "standard"
     denials = check.get("denials", [])
     warnings_list = check.get("warnings", [])
+    # Deterministic merge-confidence facts the gate saw (echoed by ods check
+    # --json; absent on older CLIs). {} when unavailable.
+    merge_confidence = check.get("merge_confidence") or {}
     issues = analyze.get("issues", [])
     files = detect.get("files", [])
     evidence = detect.get("evidence", [])
@@ -148,6 +151,7 @@ def main():
             "warnings": warnings_list,
         },
         "ai_reviews": ai_reviews,
+        "merge_confidence": merge_confidence,
     }
 
     with open(os.path.join(report_dir, "ods-report.json"), "w") as f:
@@ -173,6 +177,7 @@ def main():
         warnings_list=warnings_list,
         files=files,
         ai_reviews=ai_reviews,
+        merge_confidence=merge_confidence,
     )
 
     summary_path = os.path.join(report_dir, "ods-summary.md")
@@ -282,6 +287,32 @@ def build_markdown(**kw):
         "",
         f"**Verdict:** {kw['verdict']} \u2014 {kw['recommendation']}",
     ])
+
+    # Merge Confidence — deterministic diff facts (tested? shaped like real
+    # work? touches sensitive paths?). Echoed by ods check --json; absent on
+    # older CLIs, in which case this section is skipped.
+    mc = kw.get("merge_confidence") or {}
+    if mc:
+        tests_icon = "✅" if mc.get("tests_touched") else "⚠️"
+        risky = mc.get("risky_paths") or []
+        lines.extend([
+            "",
+            "### \U0001f6e1️ Merge Confidence",
+            "",
+            "| Signal | Value |",
+            "|--------|-------|",
+            f"| Tests touched | {tests_icon} {'yes' if mc.get('tests_touched') else 'no'} |",
+            f"| Source added without tests | {'⚠️ yes' if mc.get('added_source_without_tests') else '✅ no'} |",
+            f"| Files changed | {mc.get('files_changed', 0)} ({mc.get('source_files_changed', 0)} source, {mc.get('test_files_changed', 0)} test) |",
+            f"| Sensitive paths touched | {len(risky)} |",
+        ])
+        if risky:
+            for p in risky[:10]:
+                lines.append(f"| ↳ | `{md_cell(p)}` |")
+            if len(risky) > 10:
+                lines.append(f"| ↳ | _and {len(risky)-10} more_ |")
+        lines.append("")
+        lines.append("_Deterministic facts from the diff — no LLM. Advisory by default; AI-authored changes route to extra review._")
 
     # AI Review — semantic verdicts from AI reviewers. Advisory by default:
     # they route review attention and never block unless the policy opts in.
