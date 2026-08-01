@@ -569,3 +569,33 @@ class TestMergeConfidenceSection:
         check = {**_C_ALLOW, "patch_coverage": 0.1}
         result, _, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
         assert result == "pass"
+
+    def test_mutation_score_rendered_when_measured(self):
+        check = {**_C_ALLOW,
+                 "merge_confidence": {"tests_touched": True, "added_source_without_tests": False},
+                 "mutation_score": 0.3}
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert "Mutation score (added lines)" in md
+        assert "30%" in md
+        assert report["mutation_score"] == 0.3
+
+    def test_mutation_score_absent_when_not_measured(self):
+        # -1 sentinel: not measured → no mutation-score row.
+        check = {**_C_ALLOW,
+                 "merge_confidence": {"tests_touched": True},
+                 "mutation_score": -1}
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert "Mutation score (added lines)" not in md
+        assert report["mutation_score"] == -1
+
+    def test_mutation_score_section_shown_without_merge_confidence(self):
+        # A measured mutation score alone renders the Merge Confidence section.
+        check = {**_C_ALLOW, "mutation_score": 0.9}
+        _, _, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert "Merge Confidence" in md
+        assert "90%" in md
+
+    def test_mutation_score_never_changes_result(self):
+        check = {**_C_ALLOW, "mutation_score": 0.1}
+        result, _, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert result == "pass"
