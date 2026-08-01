@@ -92,6 +92,9 @@ def main():
     # Patch (diff) coverage of the change's added lines. Echoed top-level by
     # ods check --json; -1 or None means not measured (absent on older CLIs).
     patch_coverage = check.get("patch_coverage")
+    # Diff-scoped mutation score of the change's added lines. Echoed top-level by
+    # ods check --json; -1 or None means not measured (absent on older CLIs).
+    mutation_score = check.get("mutation_score")
     issues = analyze.get("issues", [])
     files = detect.get("files", [])
     evidence = detect.get("evidence", [])
@@ -156,6 +159,7 @@ def main():
         "ai_reviews": ai_reviews,
         "merge_confidence": merge_confidence,
         "patch_coverage": patch_coverage,
+        "mutation_score": mutation_score,
     }
 
     with open(os.path.join(report_dir, "ods-report.json"), "w") as f:
@@ -183,6 +187,7 @@ def main():
         ai_reviews=ai_reviews,
         merge_confidence=merge_confidence,
         patch_coverage=patch_coverage,
+        mutation_score=mutation_score,
     )
 
     summary_path = os.path.join(report_dir, "ods-summary.md")
@@ -299,7 +304,9 @@ def build_markdown(**kw):
     mc = kw.get("merge_confidence") or {}
     patch_coverage = kw.get("patch_coverage")
     patch_measured = isinstance(patch_coverage, (int, float)) and patch_coverage >= 0
-    if mc or patch_measured:
+    mutation_score = kw.get("mutation_score")
+    mutation_measured = isinstance(mutation_score, (int, float)) and mutation_score >= 0
+    if mc or patch_measured or mutation_measured:
         tests_icon = "✅" if mc.get("tests_touched") else "⚠️"
         risky = mc.get("risky_paths") or []
         lines.extend([
@@ -315,6 +322,10 @@ def build_markdown(**kw):
             pct = round(patch_coverage * 100)
             patch_icon = "✅" if patch_coverage >= 0.8 else "⚠️"
             lines.append(f"| Patch coverage (added lines) | {patch_icon} {pct}% |")
+        if mutation_measured:
+            pct = round(mutation_score * 100)
+            mut_icon = "✅" if mutation_score >= 0.5 else "⚠️"
+            lines.append(f"| Mutation score (added lines) | {mut_icon} {pct}% |")
         if mc:
             lines.append(
                 f"| Files changed | {mc.get('files_changed', 0)} ({mc.get('source_files_changed', 0)} source, {mc.get('test_files_changed', 0)} test) |"

@@ -67,6 +67,17 @@ inputs:
     required: false
     default: ''
 
+  mutation-report:
+    description: >-
+      Path to a mutation-testing report (gremlins JSON) produced earlier in the
+      job. Its diff-scoped mutation score is fed to the policy gate as
+      input.mutation_score. Advisory by default: a weak score routes extra
+      review for AI-authored changes, it never denies unless your policy opts
+      in. Requires a CLI with `ods check --mutation`; older CLIs skip the input
+      with a warning.
+    required: false
+    default: ''
+
   report:
     description: >-
       Append an AI attribution digest (AI vs human commit/line share over a
@@ -231,6 +242,7 @@ runs:
         ODS_POLICY: ${{ inputs.policy }}
         ODS_SARIF: ${{ inputs.sarif }}
         ODS_AI_REVIEW: ${{ inputs.ai-review }}
+        ODS_MUTATION: ${{ inputs.mutation-report }}
         # PR checkouts are synthetic merge commits, so `git rev-parse HEAD`
         # never matches the head SHA reviewers stamp into their verdicts.
         # The CLI compares against this override instead (empty on non-PR
@@ -371,13 +383,29 @@ runs:
             echo "::warning::The installed ODS CLI predates 'ods check --ai-review' — ignoring the ai-review input. Set cli-ref to a release with AI review support (or 'main')."
           fi
         fi
+        # Mutation report (gremlins JSON) feeds the check stage: its diff-scoped
+        # mutation score routes AI-authored changes with weak tests. Advisory by
+        # default. Gated on CLI support so older pins degrade gracefully.
+        MUTATION_FLAGS=()
+        if [ -n "${ODS_MUTATION:-}" ]; then
+          if ods check --help 2>&1 | grep -q -- '--mutation'; then
+            if [ -f "$ODS_MUTATION" ]; then
+              MUTATION_FLAGS+=(--mutation "$ODS_MUTATION")
+              echo "Feeding mutation report from: $ODS_MUTATION"
+            else
+              echo "::warning::mutation-report file '$ODS_MUTATION' not found — skipping"
+            fi
+          else
+            echo "::warning::The installed ODS CLI predates 'ods check --mutation' — ignoring the mutation-report input. Set cli-ref to a release with mutation support (or 'main')."
+          fi
+        fi
         CHECK_JSON="$ODS_OUTPUT_DIR/check.json"
         CHECK_EXIT=0
         set +e
         if [ -n "${ODS_POLICY:-}" ] && [ -f "$ODS_POLICY" ]; then
-          ods check --json --policy "$ODS_POLICY" "${SARIF_FLAGS[@]}" "${AI_REVIEW_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
+          ods check --json --policy "$ODS_POLICY" "${SARIF_FLAGS[@]}" "${AI_REVIEW_FLAGS[@]}" "${MUTATION_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
         else
-          ods check --json "${SARIF_FLAGS[@]}" "${AI_REVIEW_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
+          ods check --json "${SARIF_FLAGS[@]}" "${AI_REVIEW_FLAGS[@]}" "${MUTATION_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
         fi
         set -e
         echo "::endgroup::"

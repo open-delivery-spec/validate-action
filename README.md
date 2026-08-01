@@ -191,6 +191,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 | `semgrep` | No | `false` | Run Semgrep automatically and merge its findings (ignored when `sarif` is set) |
 | `semgrep-config` | No | `auto` | Semgrep ruleset when `semgrep: true` (registry ID or local rules file) |
 | `ai-review` | No | — | Path(s) to AI reviewer verdict files, newline- or comma-separated ([details](#ai-review-verdicts-semantic-review-as-gate-input)) |
+| `mutation-report` | No | — | Path to a mutation-testing report (gremlins JSON); its diff-scoped mutation score feeds the gate |
 | `report` | No | `false` | Append an AI attribution digest to the summary/comment/artifact ([details](#periodic-ai-attribution-digest)) |
 | `report-since` | No | `90 days ago` | History window for the attribution digest (any git `--since` expression) |
 | `summary` | No | `true` | Append report to job summary |
