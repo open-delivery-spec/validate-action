@@ -1,0 +1,19 @@
+.github/workflows/update-cli-ref.yml
+  s_680628c6310e80::t_deacb4606fc23c 42-47,77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "fb3f6f41fb84cae14808212d35821cd3ebc38b82",
+  "prompts": {},
+  "sessions": {
+    "s_680628c6310e80": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fbdb6-e20e-734d-97b2-4afb1a49e11f",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "shenxianpeng <xianpeng.shen@gmail.com>"
+    }
+  }
+}
