@@ -39,7 +39,12 @@ jobs:
       - name: Open bump PR
         if: steps.v.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          # GITHUB_TOKEN cannot create PRs when the repo/org setting "Allow
+          # GitHub Actions to create and approve pull requests" is disabled.
+          # If a BUMP_CLI_PAT secret exists (fine-grained PAT with contents:
+          # write + pull-requests: write on this repo), use it; otherwise fall
+          # back to the default token.
+          GH_TOKEN: ${{ secrets.BUMP_CLI_PAT || github.token }}
           LATEST: ${{ steps.v.outputs.latest }}
           CURRENT: ${{ steps.v.outputs.current }}
         run: |
@@ -69,6 +74,6 @@ jobs:
           Review and merge to update the Action's default CLI version.
 
           > Note: PRs opened by \`GITHUB_TOKEN\` don't auto-trigger \`self-test\`. Push an empty commit or use *Update branch* to run CI before merging (or wire this workflow to a PAT secret)."; then
-            echo "::error::Could not open the bump PR. If the error above says 'GitHub Actions is not permitted to create or approve pull requests', enable that permission under Settings → Actions → General → Workflow permissions. The branch '$branch' is already pushed — the PR can also be opened manually from it."
+            echo "::error::Could not open the bump PR. If the error above says 'GitHub Actions is not permitted to create or approve pull requests', the repo/org setting 'Allow GitHub Actions to create and approve pull requests' is disabled (Settings → Actions → General → Workflow permissions). Fix it by either: (1) enabling that setting, or (2) adding a fine-grained PAT secret named BUMP_CLI_PAT (contents: write + pull-requests: write, scoped to this repo) and re-running this workflow. The branch '$branch' is already pushed — the PR can also be opened manually from it."
             exit 1
           fi
