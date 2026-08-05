@@ -111,6 +111,9 @@ def main():
     # Diff-scoped mutation score of the change's added lines. Echoed top-level by
     # ods check --json; -1 or None means not measured (absent on older CLIs).
     mutation_score = check.get("mutation_score")
+    # Evidence tier: how the AI attribution was obtained (corroborated/attested/
+    # inferred). Echoed by ods check --json; absent on older CLIs.
+    evidence_tier = check.get("evidence_tier")
     issues = analyze.get("issues", [])
     files = detect.get("files", [])
     evidence = detect.get("evidence", [])
@@ -182,6 +185,7 @@ def main():
         "merge_confidence": merge_confidence,
         "patch_coverage": patch_coverage,
         "mutation_score": mutation_score,
+        "evidence_tier": evidence_tier,
         "pipeline": {
             "integrity": "ok" if pipeline_ok else "inconclusive",
             "stages": stages,
@@ -216,6 +220,7 @@ def main():
         merge_confidence=merge_confidence,
         patch_coverage=patch_coverage,
         mutation_score=mutation_score,
+        evidence_tier=evidence_tier,
         stages=stages,
         inconclusive_stages=inconclusive_stages,
         failure_mode=failure_mode,
@@ -283,9 +288,17 @@ def build_markdown(**kw):
         "",
         f"**Result:** {kw['overall']}  ",
         f"**AI Detected:** {ai_label} (confidence: {kw['ai_confidence']*100:.0f}%)  ",
+    ]
+    # Evidence tier — how the attribution was obtained (shown only when AI is
+    # detected and the CLI reported a tier). A confidence label, not proof.
+    ev_tier = kw.get("evidence_tier")
+    if kw["ai_detected"] and not kw.get("detect_error") and ev_tier:
+        ev_icon = {"corroborated": "\U0001f7e2", "attested": "\U0001f7e1", "inferred": "\U0001f7e0"}.get(ev_tier, "")
+        lines.append(f"**Evidence:** {ev_icon} {ev_tier}  ")
+    lines.extend([
         f"**Tech Debt Delta:** {kw['tech_debt']:+.1f} ({kw['verdict']})  ",
         f"**Policy:** {policy_label}  ",
-    ]
+    ])
     if kw["policy_allowed"]:
         tier = kw.get("review_tier", "standard")
         tier_icon = {"auto": "\U0001f7e2", "standard": "\U0001f535", "elevated": "\U0001f7e0"}.get(tier, "")
