@@ -683,3 +683,37 @@ class TestPipelineIntegrity:
         result, report, _, _ = _run_fm(_D_HUMAN, _A_INCONCLUSIVE, _S_NEUTRAL, _C_ALLOW, "nonsense")
         assert result == "warn"
         assert report["pipeline"]["failure_mode"] == "warn"
+
+
+# ── Evidence tier badge ────────────────────────────────────────────────────────
+
+class TestEvidenceTier:
+    def test_badge_rendered_when_ai_and_tier_present(self):
+        detect = {**_D_HUMAN, "ai_generated": True, "confidence": 0.9,
+                  "evidence": [], "sources": ["commit-trailer"]}
+        check = {**_C_ALLOW, "evidence_tier": "attested"}
+        _, report, md, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, check)
+        assert "**Evidence:**" in md
+        assert "attested" in md
+        assert report["evidence_tier"] == "attested"
+
+    def test_badge_absent_when_no_ai(self):
+        # Human PR: no evidence badge even if a tier somehow leaked through.
+        check = {**_C_ALLOW, "evidence_tier": "inferred"}
+        _, _, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
+        assert "**Evidence:**" not in md
+
+    def test_badge_absent_when_tier_missing(self):
+        # Older CLI that doesn't emit evidence_tier — no badge, no crash.
+        detect = {**_D_HUMAN, "ai_generated": True, "confidence": 0.9,
+                  "sources": ["commit-trailer"]}
+        _, report, md, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert "**Evidence:**" not in md
+        assert report["evidence_tier"] is None
+
+    def test_badge_never_changes_result(self):
+        detect = {**_D_HUMAN, "ai_generated": True, "confidence": 0.9,
+                  "sources": ["branch-name"]}
+        check = {**_C_ALLOW, "evidence_tier": "inferred"}
+        result, _, _, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, check)
+        assert result == "warn"  # warn comes from AI-detected, not the tier
