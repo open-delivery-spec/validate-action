@@ -599,3 +599,87 @@ class TestMergeConfidenceSection:
         check = {**_C_ALLOW, "mutation_score": 0.1}
         result, _, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, check)
         assert result == "pass"
+
+
+# ── Pipeline integrity (stage failures are never a silent pass) ─────────────────
+
+# Stage outputs the action writes when a stage fails to produce a usable result.
+_A_INCONCLUSIVE = {"_ods_stage_error": True, "issues": [], "total_lines": 0,
+                   "summary": "Analysis inconclusive (ods analyze exited 1)"}
+_S_INCONCLUSIVE = {"_ods_stage_error": True, "technical_debt_delta": 0,
+                   "verdict": "neutral", "summary": "Scoring inconclusive (ods score exited 1)"}
+_C_INCONCLUSIVE = {"_ods_stage_error": True, "allowed": True, "denials": [],
+                   "warnings": [], "summary": "Policy check inconclusive (ods check exited 1)"}
+_D_DETECT_ERR = {"_ods_detect_error": True, "ai_generated": False, "confidence": 0,
+                 "evidence": [], "sources": [], "files": [], "summary": "Detection inconclusive"}
+
+
+def _run_fm(detect, analyze, score, check, failure_mode):
+    """_run with ODS_FAILURE_MODE set for the duration of the call."""
+    prev = os.environ.get("ODS_FAILURE_MODE")
+    os.environ["ODS_FAILURE_MODE"] = failure_mode
+    try:
+        return _run(detect, analyze, score, check)
+    finally:
+        if prev is None:
+            os.environ.pop("ODS_FAILURE_MODE", None)
+        else:
+            os.environ["ODS_FAILURE_MODE"] = prev
+
+
+class TestPipelineIntegrity:
+    def test_all_stages_completed_is_ok(self):
+        result, report, md, gh = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert report["pipeline"]["integrity"] == "ok"
+        assert report["pipeline"]["stages"] == {
+            "detect": "completed", "analyze": "completed",
+            "score": "completed", "check": "completed",
+        }
+        assert "Pipeline Integrity" not in md
+        assert "pipeline_integrity=ok" in gh
+        assert result == "pass"
+
+    def test_analyze_failure_is_not_a_silent_pass(self):
+        # The old behavior wrote a clean {"issues":[]} and PASSed. It must WARN now.
+        result, report, md, _ = _run(_D_HUMAN, _A_INCONCLUSIVE, _S_NEUTRAL, _C_ALLOW)
+        assert result == "warn"
+        assert report["pipeline"]["integrity"] == "inconclusive"
+        assert "analyze" in report["pipeline"]["inconclusive"]
+        assert "Pipeline Integrity" in md
+
+    def test_score_failure_warns(self):
+        result, report, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_INCONCLUSIVE, _C_ALLOW)
+        assert result == "warn"
+        assert report["pipeline"]["inconclusive"] == ["score"]
+
+    def test_check_failure_is_not_a_silent_pass(self):
+        # A crashed gate defaults allowed=True; it must not read as a clean pass.
+        result, report, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_INCONCLUSIVE)
+        assert result == "warn"
+        assert "check" in report["pipeline"]["inconclusive"]
+
+    def test_detect_failure_included_in_pipeline(self):
+        result, report, _, _ = _run(_D_DETECT_ERR, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert result == "warn"
+        assert report["pipeline"]["stages"]["detect"] == "inconclusive"
+
+    def test_failure_mode_block_fails_the_run(self):
+        result, report, md, _ = _run_fm(_D_HUMAN, _A_INCONCLUSIVE, _S_NEUTRAL, _C_ALLOW, "block")
+        assert result == "block"
+        assert report["pipeline"]["failure_mode"] == "block"
+        assert "block" in md.lower()
+
+    def test_failure_mode_default_is_warn(self):
+        result, report, _, _ = _run(_D_HUMAN, _A_INCONCLUSIVE, _S_NEUTRAL, _C_ALLOW)
+        assert result == "warn"
+        assert report["pipeline"]["failure_mode"] == "warn"
+
+    def test_real_block_still_blocks_regardless_of_pipeline(self):
+        deny = {"allowed": False, "denials": ["nope"], "warnings": []}
+        result, _, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, deny)
+        assert result == "block"
+
+    def test_invalid_failure_mode_falls_back_to_warn(self):
+        result, report, _, _ = _run_fm(_D_HUMAN, _A_INCONCLUSIVE, _S_NEUTRAL, _C_ALLOW, "nonsense")
+        assert result == "warn"
+        assert report["pipeline"]["failure_mode"] == "warn"
