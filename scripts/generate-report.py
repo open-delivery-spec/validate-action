@@ -73,6 +73,22 @@ def main():
         if verdict.get("verdict"):
             ai_reviews.append(verdict)
 
+    # Pipeline integrity — a stage is "inconclusive" when its command failed to
+    # produce a usable result (the action marks it with _ods_detect_error /
+    # _ods_stage_error rather than writing a clean-looking zero result). A broken
+    # stage must never read as a passing gate.
+    failure_mode = (os.environ.get("ODS_FAILURE_MODE", "warn") or "warn").strip().lower()
+    if failure_mode not in ("warn", "block"):
+        failure_mode = "warn"
+    stages = {
+        "detect": "inconclusive" if detect.get("_ods_detect_error") else "completed",
+        "analyze": "inconclusive" if analyze.get("_ods_stage_error") else "completed",
+        "score": "inconclusive" if score.get("_ods_stage_error") else "completed",
+        "check": "inconclusive" if check.get("_ods_stage_error") else "completed",
+    }
+    inconclusive_stages = [name for name, st in stages.items() if st == "inconclusive"]
+    pipeline_ok = not inconclusive_stages
+
     detect_error = detect.get("_ods_detect_error", False)
     ai_detected = detect.get("ai_generated", False)
     ai_confidence = detect.get("confidence", 0)
@@ -100,23 +116,28 @@ def main():
     evidence = detect.get("evidence", [])
     sources = detect.get("sources", [])
 
-    # Determine overall result
+    # Determine overall result. Policy denial is authoritative (BLOCK); detected
+    # AI or a failed detection routes to WARN; otherwise PASS.
     if not policy_allowed:
         overall = "\u274c BLOCK"
         result_value = "block"
-    elif detect_error:
-        # Detection failed \u2014 treat as warn so the PR isn't silently passed
-        overall = "\u26a0\ufe0f  WARN"
-        result_value = "warn"
-    elif ai_detected and ai_confidence >= 0.8 and len(issues) > 0:
-        overall = "\u26a0\ufe0f  WARN"
-        result_value = "warn"
-    elif ai_detected:
+    elif detect_error or ai_detected:
         overall = "\u26a0\ufe0f  WARN"
         result_value = "warn"
     else:
         overall = "\u2705 PASS"
         result_value = "pass"
+
+    # Pipeline integrity override: a stage that did not complete must never read
+    # as a clean PASS. Advisory by default (at least WARN); fail-closed teams set
+    # failure-mode: block to turn an inconclusive run into a BLOCK.
+    if inconclusive_stages:
+        if failure_mode == "block":
+            overall = "\u274c BLOCK"
+            result_value = "block"
+        elif result_value == "pass":
+            overall = "\u26a0\ufe0f  WARN"
+            result_value = "warn"
 
     # Write GitHub step outputs
     if github_output:
@@ -128,6 +149,7 @@ def main():
             f.write(f"policy_allowed={'true' if policy_allowed else 'false'}\n")
             f.write(f"review_tier={review_tier}\n")
             f.write(f"detect_error={'true' if detect_error else 'false'}\n")
+            f.write(f"pipeline_integrity={'ok' if pipeline_ok else 'inconclusive'}\n")
 
     # Combined JSON report
     report = {
@@ -160,6 +182,12 @@ def main():
         "merge_confidence": merge_confidence,
         "patch_coverage": patch_coverage,
         "mutation_score": mutation_score,
+        "pipeline": {
+            "integrity": "ok" if pipeline_ok else "inconclusive",
+            "stages": stages,
+            "inconclusive": inconclusive_stages,
+            "failure_mode": failure_mode,
+        },
     }
 
     with open(os.path.join(report_dir, "ods-report.json"), "w") as f:
@@ -188,6 +216,15 @@ def main():
         merge_confidence=merge_confidence,
         patch_coverage=patch_coverage,
         mutation_score=mutation_score,
+        stages=stages,
+        inconclusive_stages=inconclusive_stages,
+        failure_mode=failure_mode,
+        stage_summaries={
+            "detect": detect.get("summary", ""),
+            "analyze": analyze.get("summary", ""),
+            "score": score.get("summary", ""),
+            "check": check.get("summary", ""),
+        },
     )
 
     summary_path = os.path.join(report_dir, "ods-summary.md")
@@ -254,6 +291,32 @@ def build_markdown(**kw):
         tier_icon = {"auto": "\U0001f7e2", "standard": "\U0001f535", "elevated": "\U0001f7e0"}.get(tier, "")
         lines.append(f"**Review Tier:** {tier_icon} {tier}  ")
     lines.append("")
+
+    # Pipeline integrity — surface stage failures loudly. A stage that did not
+    # complete is never silently reported as a clean result; it is called out
+    # here and forces the run to at least WARN (or BLOCK under failure-mode).
+    stages = kw.get("stages") or {}
+    inconclusive = kw.get("inconclusive_stages") or []
+    if inconclusive:
+        summaries = kw.get("stage_summaries") or {}
+        icon = {"completed": "✅", "inconclusive": "⚠️"}
+        lines.extend([
+            "### \U0001f6e0️ Pipeline Integrity",
+            "",
+            f"> **⚠️ {len(inconclusive)} stage(s) did not complete** — results below may be incomplete. "
+            + ("Failing the run (`failure-mode: block`)." if kw.get("failure_mode") == "block"
+               else "Marked **WARN** so this is not read as a clean pass."),
+            "",
+            "| Stage | Status |",
+            "|-------|--------|",
+        ])
+        for name in ("detect", "analyze", "score", "check"):
+            st = stages.get(name, "completed")
+            note = f" — {md_cell(summaries.get(name))}" if st == "inconclusive" and summaries.get(name) else ""
+            lines.append(f"| {name} | {icon.get(st, '')} {st}{note} |")
+        lines.append("")
+        lines.append("_Check the workflow logs for each stage's error output._")
+        lines.append("")
 
     # Detection
     lines.append("### \U0001f50d Detection")

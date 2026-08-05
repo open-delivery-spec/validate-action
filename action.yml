@@ -78,6 +78,16 @@ inputs:
     required: false
     default: ''
 
+  failure-mode:
+    description: >-
+      What to do when a pipeline stage (detect / analyze / score / check) fails
+      to produce a usable result. `warn` (default): mark the run inconclusive
+      and set the result to at least WARN, so a broken stage is never reported
+      as a clean PASS. `block`: fail the run (exit 1) on any inconclusive stage
+      — fail-closed for high-compliance teams.
+    required: false
+    default: 'warn'
+
   report:
     description: >-
       Append an AI attribution digest (AI vs human commit/line share over a
@@ -169,6 +179,9 @@ outputs:
   review-tier:
     description: 'Policy review-routing verdict: auto | standard | elevated'
     value: ${{ steps.ods.outputs.review_tier }}
+  pipeline-integrity:
+    description: 'ok | inconclusive — whether every pipeline stage completed'
+    value: ${{ steps.ods.outputs.pipeline_integrity }}
 
 runs:
   using: composite
@@ -243,6 +256,7 @@ runs:
         ODS_SARIF: ${{ inputs.sarif }}
         ODS_AI_REVIEW: ${{ inputs.ai-review }}
         ODS_MUTATION: ${{ inputs.mutation-report }}
+        ODS_FAILURE_MODE: ${{ inputs.failure-mode }}
         # PR checkouts are synthetic merge commits, so `git rev-parse HEAD`
         # never matches the head SHA reviewers stamp into their verdicts.
         # The CLI compares against this override instead (empty on non-PR
@@ -343,17 +357,33 @@ runs:
           fi
         fi
         set +e
-        ods analyze --json "${SARIF_FLAGS[@]}" 2>/dev/null > "$ANALYZE_JSON" || \
-          echo '{"issues":[],"total_lines":0,"summary":"No code analyzed"}' > "$ANALYZE_JSON"
+        ods analyze --json "${SARIF_FLAGS[@]}" > "$ANALYZE_JSON" 2>"$ODS_OUTPUT_DIR/analyze.stderr"
+        ANALYZE_EXIT=$?
         set -e
+        # Judge success by valid JSON, NOT by exit code: `ods analyze` also exits
+        # non-zero when it finds issues, and that output is valid and must be
+        # kept. Only a genuinely broken run (no parseable {issues:...}) is
+        # inconclusive — it must never be masked as a clean, empty result.
+        if ! python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if isinstance(d, dict) and 'issues' in d else 1)" "$ANALYZE_JSON" 2>/dev/null; then
+          echo "::warning::ods analyze produced no valid output (exit=$ANALYZE_EXIT) — analysis marked inconclusive"
+          [ -s "$ODS_OUTPUT_DIR/analyze.stderr" ] && { echo "--- ods analyze error output ---"; cat "$ODS_OUTPUT_DIR/analyze.stderr"; }
+          printf '{"_ods_stage_error":true,"issues":[],"total_lines":0,"summary":"Analysis inconclusive (ods analyze exited %s)"}\n' "$ANALYZE_EXIT" > "$ANALYZE_JSON"
+        fi
         echo "::endgroup::"
 
         echo "::group::③ Score — Technical Debt Impact"
         SCORE_JSON="$ODS_OUTPUT_DIR/score.json"
         set +e
-        ods score --json "${SARIF_FLAGS[@]}" 2>/dev/null > "$SCORE_JSON" || \
-          echo '{"technical_debt_delta":0,"verdict":"neutral"}' > "$SCORE_JSON"
+        ods score --json "${SARIF_FLAGS[@]}" > "$SCORE_JSON" 2>"$ODS_OUTPUT_DIR/score.stderr"
+        SCORE_EXIT=$?
         set -e
+        # Same rule: a valid score JSON (has technical_debt_delta) is kept even on
+        # a non-zero exit; only a broken run is inconclusive, never a fake neutral.
+        if ! python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if isinstance(d, dict) and 'technical_debt_delta' in d else 1)" "$SCORE_JSON" 2>/dev/null; then
+          echo "::warning::ods score produced no valid output (exit=$SCORE_EXIT) — scoring marked inconclusive"
+          [ -s "$ODS_OUTPUT_DIR/score.stderr" ] && { echo "--- ods score error output ---"; cat "$ODS_OUTPUT_DIR/score.stderr"; }
+          printf '{"_ods_stage_error":true,"technical_debt_delta":0,"verdict":"neutral","summary":"Scoring inconclusive (ods score exited %s)"}\n' "$SCORE_EXIT" > "$SCORE_JSON"
+        fi
         echo "::endgroup::"
 
         echo "::group::④ Check — Policy Enforcement"
@@ -403,11 +433,20 @@ runs:
         CHECK_EXIT=0
         set +e
         if [ -n "${ODS_POLICY:-}" ] && [ -f "$ODS_POLICY" ]; then
-          ods check --json --policy "$ODS_POLICY" "${SARIF_FLAGS[@]}" "${AI_REVIEW_FLAGS[@]}" "${MUTATION_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
+          ods check --json --policy "$ODS_POLICY" "${SARIF_FLAGS[@]}" "${AI_REVIEW_FLAGS[@]}" "${MUTATION_FLAGS[@]}" > "$CHECK_JSON" 2>"$ODS_OUTPUT_DIR/check.stderr" || CHECK_EXIT=$?
         else
-          ods check --json "${SARIF_FLAGS[@]}" "${AI_REVIEW_FLAGS[@]}" "${MUTATION_FLAGS[@]}" > "$CHECK_JSON" 2>/dev/null || CHECK_EXIT=$?
+          ods check --json "${SARIF_FLAGS[@]}" "${AI_REVIEW_FLAGS[@]}" "${MUTATION_FLAGS[@]}" > "$CHECK_JSON" 2>"$ODS_OUTPUT_DIR/check.stderr" || CHECK_EXIT=$?
         fi
         set -e
+        # A valid check result (has `allowed`) is kept even on a non-zero exit —
+        # `ods check` exits non-zero when it denies, and that's a real BLOCK, not
+        # a failure. Only a crash that yields no parseable verdict is
+        # inconclusive: never let a broken gate read as an allowed (passing) run.
+        if ! python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if isinstance(d, dict) and 'allowed' in d else 1)" "$CHECK_JSON" 2>/dev/null; then
+          echo "::warning::ods check produced no valid verdict (exit=$CHECK_EXIT) — policy check marked inconclusive"
+          [ -s "$ODS_OUTPUT_DIR/check.stderr" ] && { echo "--- ods check error output ---"; cat "$ODS_OUTPUT_DIR/check.stderr"; }
+          printf '{"_ods_stage_error":true,"allowed":true,"denials":[],"warnings":[],"summary":"Policy check inconclusive (ods check exited %s)"}\n' "$CHECK_EXIT" > "$CHECK_JSON"
+        fi
         echo "::endgroup::"
 
         # Generate report using external script
