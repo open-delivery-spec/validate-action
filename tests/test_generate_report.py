@@ -717,3 +717,36 @@ class TestEvidenceTier:
         check = {**_C_ALLOW, "evidence_tier": "inferred"}
         result, _, _, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, check)
         assert result == "warn"  # warn comes from AI-detected, not the tier
+
+
+# ── Shallow-checkout notice ────────────────────────────────────────────────────
+
+def _run_shallow(detect, analyze, score, check):
+    """_run with ODS_SHALLOW_CHECKOUT=true for the duration of the call."""
+    prev = os.environ.get("ODS_SHALLOW_CHECKOUT")
+    os.environ["ODS_SHALLOW_CHECKOUT"] = "true"
+    try:
+        return _run(detect, analyze, score, check)
+    finally:
+        if prev is None:
+            os.environ.pop("ODS_SHALLOW_CHECKOUT", None)
+        else:
+            os.environ["ODS_SHALLOW_CHECKOUT"] = prev
+
+
+class TestShallowCheckoutNotice:
+    def test_notice_rendered_when_shallow(self):
+        result, report, md, _ = _run_shallow(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert "Shallow checkout" in md
+        assert "fetch-depth: 0" in md
+        assert report["pipeline"]["shallow_checkout"] is True
+
+    def test_notice_absent_when_full_history(self):
+        _, report, md, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert "Shallow checkout" not in md
+        assert report["pipeline"]["shallow_checkout"] is False
+
+    def test_shallow_is_advisory_result_unchanged(self):
+        # Degraded inputs get a notice, not a verdict change: a clean run stays pass.
+        result, _, _, _ = _run_shallow(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert result == "pass"

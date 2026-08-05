@@ -80,6 +80,10 @@ def main():
     failure_mode = (os.environ.get("ODS_FAILURE_MODE", "warn") or "warn").strip().lower()
     if failure_mode not in ("warn", "block"):
         failure_mode = "warn"
+    # Shallow checkout flag set by the action's environment diagnostics: diff-
+    # and history-based signals may be running on partial inputs. Advisory —
+    # surfaced in the report so degraded numbers are never read as authoritative.
+    shallow_checkout = (os.environ.get("ODS_SHALLOW_CHECKOUT", "") or "").strip().lower() == "true"
     stages = {
         "detect": "inconclusive" if detect.get("_ods_detect_error") else "completed",
         "analyze": "inconclusive" if analyze.get("_ods_stage_error") else "completed",
@@ -191,6 +195,7 @@ def main():
             "stages": stages,
             "inconclusive": inconclusive_stages,
             "failure_mode": failure_mode,
+            "shallow_checkout": shallow_checkout,
         },
     }
 
@@ -224,6 +229,7 @@ def main():
         stages=stages,
         inconclusive_stages=inconclusive_stages,
         failure_mode=failure_mode,
+        shallow_checkout=shallow_checkout,
         stage_summaries={
             "detect": detect.get("summary", ""),
             "analyze": analyze.get("summary", ""),
@@ -304,6 +310,23 @@ def build_markdown(**kw):
         tier_icon = {"auto": "\U0001f7e2", "standard": "\U0001f535", "elevated": "\U0001f7e0"}.get(tier, "")
         lines.append(f"**Review Tier:** {tier_icon} {tier}  ")
     lines.append("")
+
+    # Shallow-checkout notice — diff/history signals may be running on partial
+    # inputs. Advisory: it explains the degradation and the fix, it does not
+    # change the result.
+    if kw.get("shallow_checkout"):
+        lines.extend([
+            "> **⚠️ Shallow checkout** — this workflow checked out only the tip commit "
+            "(`fetch-depth: 1`, the `actions/checkout` default). Diff- and history-based "
+            "signals are degraded: the base diff may be empty and commit-trailer "
+            "attribution can only scan one commit. Fix:",
+            "> ```yaml",
+            "> - uses: actions/checkout@v7",
+            ">   with:",
+            ">     fetch-depth: 0",
+            "> ```",
+            "",
+        ])
 
     # Pipeline integrity — surface stage failures loudly. A stage that did not
     # complete is never silently reported as a clean result; it is called out

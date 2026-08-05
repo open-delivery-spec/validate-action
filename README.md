@@ -45,6 +45,12 @@ jobs:
       - uses: open-delivery-spec/validate-action@v1
 ```
 
+> `fetch-depth: 0` is **required for accurate results** — ODS's diff- and
+> history-based signals need the base commit and commit history. If you forget
+> it, the Action detects the shallow checkout at runtime and warns in the logs
+> and the PR report with the exact fix, instead of quietly reporting on partial
+> inputs.
+
 That’s it. The Action automatically:
 
 1. **Attributes** AI-generated code (`Co-Authored-By` trailers, PR disclosure, branch names, diff heuristics)
