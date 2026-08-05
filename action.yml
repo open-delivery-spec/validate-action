@@ -276,6 +276,25 @@ runs:
         # what THIS invocation was given.
         rm -f "$ODS_OUTPUT_DIR"/ai-review-*.json
 
+        # ── Environment diagnostics: shallow checkout ─────────────────────
+        # actions/checkout defaults to fetch-depth: 1. ODS's diff- and
+        # history-based signals (base diff, commit-trailer attribution over
+        # multiple commits, git-ai notes, patch coverage / mutation scoping)
+        # silently degrade without history. Detect it up front and tell the
+        # user exactly what degrades and how to fix it, instead of letting a
+        # confident-looking report ride on partial inputs. Advisory only —
+        # never fails the run.
+        ODS_SHALLOW_CHECKOUT="false"
+        if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+          ODS_SHALLOW_CHECKOUT="true"
+          echo "::warning::Shallow checkout detected (fetch-depth: 1). ODS diff- and history-based signals degrade: the base diff may be empty (analysis/score/merge-confidence scope), and commit-trailer attribution can only scan the tip commit. Fix: set fetch-depth: 0 on actions/checkout — { uses: actions/checkout@v7, with: { fetch-depth: 0 } }"
+        fi
+        # The concrete symptom: the diff base isn't resolvable locally.
+        if [ -n "${ODS_DIFF_BASE:-}" ] && ! git rev-parse --verify --quiet "${ODS_DIFF_BASE}^{commit}" >/dev/null 2>&1; then
+          echo "::warning::diff-base '${ODS_DIFF_BASE}' does not resolve in this checkout — diff-scoped signals will be empty. This usually means a shallow checkout; set fetch-depth: 0 on actions/checkout."
+        fi
+        export ODS_SHALLOW_CHECKOUT
+
         # Build detect args as an ARRAY expanded with quotes. Never splice the
         # PR body into a flat string: unquoted expansion word-splits it, so any
         # flag-looking token an author writes in a PR description (e.g. a
