@@ -33,7 +33,7 @@ jobs:
           commit-check --message --branch
 
       - name: ODS AI code quality gate
-        uses: open-delivery-spec/validate-action@1d2e58a1ecd11e392ae547bdd3eafdbad58b6d33 # v0.2.5
+        uses: open-delivery-spec/validate-action@ffd7e30bc0b584802fdd99d8bcb53f437f09b405 # v0.2.7
         with:
           diff-base: ${{ github.event.pull_request.base.sha || 'origin/main' }}
           branch: ${{ github.head_ref }}
