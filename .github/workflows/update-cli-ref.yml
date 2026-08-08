@@ -2,11 +2,11 @@ name: Update pinned CLI
 
 # Opens a PR bumping the default `cli-ref` in action.yml whenever the ODS CLI
 # publishes a newer release. Self-contained (git + gh) — no Renovate app or
-# external action required. Runs weekly and can be triggered manually.
+# external action required. Runs daily and can be triggered manually.
 
 on:
   schedule:
-    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+    - cron: "17 6 * * *" # daily 06:17 UTC — CLI releases should reach the pin same-day
   workflow_dispatch:
 
 permissions:
