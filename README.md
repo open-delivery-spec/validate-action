@@ -233,6 +233,7 @@ ods-report/
 ├── ods-report.json     (machine-readable JSON)
 ├── ods-summary.md      (Markdown for job summary / PR comment)
 ├── ods-badge.svg       (badge showing result)
+├── evidence.cdx.json   (AI-code evidence document — a CycloneDX 1.6 BOM attesting what the gate evaluated; needs a CLI with `ods attest`)
 ├── attribution.json    (only with report: true — raw ods report output)
 └── ods-attribution.md  (only with report: true — rendered digest)
 ```
