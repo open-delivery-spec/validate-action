@@ -475,6 +475,30 @@ runs:
         python3 "$REPORT_SCRIPT" "$ODS_OUTPUT_DIR" "$GITHUB_OUTPUT"
         echo "::endgroup::"
 
+        # AI-code evidence document (CycloneDX 1.6, spec proposal 001): serialize
+        # what the gate just evaluated into an auditable artifact. Runs BEFORE
+        # the block exit — the audit trail matters most for blocked changes.
+        # Best effort, gated on CLI support so older pins degrade gracefully.
+        echo "::group::Attest — AI-Code Evidence Document"
+        if ods attest --help >/dev/null 2>&1; then
+          # Per-stage integrity computed by the report script; empty when unknown.
+          ODS_PIPELINE_INTEGRITY=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('pipeline',{}).get('integrity',''))" "$ODS_OUTPUT_DIR/ods-report.json" 2>/dev/null || echo "")
+          export ODS_PIPELINE_INTEGRITY
+          ATTEST_FLAGS=("${SARIF_FLAGS[@]}" "${AI_REVIEW_FLAGS[@]}" "${MUTATION_FLAGS[@]}")
+          if [ -n "${ODS_POLICY:-}" ] && [ -f "$ODS_POLICY" ]; then
+            ATTEST_FLAGS+=(--policy "$ODS_POLICY")
+          fi
+          if ods attest --out "$ODS_OUTPUT_DIR/evidence.cdx.json" "${ATTEST_FLAGS[@]}" 2>"$ODS_OUTPUT_DIR/attest.stderr"; then
+            echo "Evidence document written to $ODS_OUTPUT_DIR/evidence.cdx.json (uploaded with the report artifact)"
+          else
+            echo "::warning::ods attest failed — evidence document skipped"
+            [ -s "$ODS_OUTPUT_DIR/attest.stderr" ] && cat "$ODS_OUTPUT_DIR/attest.stderr"
+          fi
+        else
+          echo "Installed ODS CLI predates 'ods attest' — skipping the evidence document."
+        fi
+        echo "::endgroup::"
+
         # Read result from the script output
         RESULT_VALUE=$(cat "$ODS_OUTPUT_DIR/.result" 2>/dev/null || echo "pass")
 
