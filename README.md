@@ -158,10 +158,12 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 
 ### When AI code is detected:
 
-> **Result:** ⚠️  WARN  
+> **Result:** ✅ PASS  
 > **AI Detected:** 🤖 Yes (confidence: 85%)  
-> **Tech Debt Delta:** +4.2 (increase)  
+> **Evidence:** 🟡 attested  
+> **Tech Debt Delta:** +0.4 (decrease)  
 > **Policy:** ✅ Allowed  
+> **Review Tier:** 🔵 standard  
 >
 > ### 🔍 Detection
 > | Source | Signal | Confidence |
@@ -170,8 +172,23 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 > | pr-body | AI disclosure checkbox is checked | 85% |
 >
 > ### 📊 Analysis
-> 3 issue(s) found: 1 high, 2 medium
+> No quality issues detected
 > ...
+
+AI involvement on its own is **not** a finding — a clean AI-authored change
+passes. The badge answers *"does this need a human?"*, and every reason it is
+not green is named in a **Why** line:
+
+### When something needs attention:
+
+> **Result:** ⚠️  WARN  
+> **AI Detected:** 🤖 Yes (confidence: 85%)  
+> **Policy:** ✅ Allowed  
+> **Review Tier:** 🟠 elevated  
+> **Why:** 1 policy warning; policy routed this to elevated review  
+>
+> ### ⚠️  Policy Warnings
+> - ⚠️  High-confidence AI code (85%) with low patch coverage (41%)
 
 ### When policy blocks the PR:
 
@@ -216,7 +233,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 
 | Output | Description |
 |--------|-------------|
-| `result` | `pass` \| `warn` \| `block` |
+| `result` | `pass` \| `warn` \| `block` — `block` when the policy denied the change (or a stage failed under `failure-mode: block`); `warn` when the policy warned or routed to elevated review, or the pipeline could not answer; `pass` otherwise. Detected AI alone never produces a `warn` |
 | `ai-detected` | `true` \| `false` |
 | `ai-confidence` | Detection confidence (0.0–1.0) |
 | `tech-debt-delta` | Technical debt delta score |

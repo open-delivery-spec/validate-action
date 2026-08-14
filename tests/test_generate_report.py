@@ -137,6 +137,11 @@ _D_HUMAN = {
     "ai_generated": False, "confidence": 0.0,
     "summary": "No AI", "evidence": [], "sources": [], "files": [],
 }
+_D_AI = {
+    "ai_generated": True, "confidence": 0.9,
+    "summary": "AI-assisted", "sources": ["commit-trailer"], "files": [],
+    "evidence": [{"source": "commit-trailer", "value": "AI-assisted commit abc1234", "confidence": 0.9}],
+}
 _A_CLEAN = {
     "total_lines": 100, "ai_lines": 0,
     "issues": [], "summary": "No issues",
@@ -204,19 +209,67 @@ class TestResultDetermination:
 
     def test_detect_error_is_warn(self):
         detect = {**_D_HUMAN, "_ods_detect_error": True}
-        result, _, _, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        result, report, md, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
         assert result == "warn"
+        assert "AI detection did not complete" in report["result_reasons"]
+        assert "**Why:**" in md
 
-    def test_ai_detected_is_warn(self):
+    def test_clean_ai_pr_is_pass(self):
+        """AI involvement alone is not a finding: a clean AI change passes.
+
+        Reporting every AI-authored change as WARN made the badge meaningless
+        for AI-heavy teams and contradicted the scorer, which scores a clean
+        fully-AI change ~0. Attribution routes review; it does not fail a gate.
+        """
         detect = {**_D_HUMAN, "ai_generated": True, "confidence": 0.9}
-        result, _, _, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
-        assert result == "warn"
+        result, report, _, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert result == "pass"
+        assert report["result_reasons"] == []
 
     def test_block_beats_detect_error(self):
         detect = {**_D_HUMAN, "_ods_detect_error": True}
         check = {**_C_ALLOW, "allowed": False, "denials": ["blocked"]}
         result, _, _, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, check)
         assert result == "block"
+
+    # Every reason below must, on its own, turn an otherwise clean AI change
+    # into a WARN — and must name itself in result_reasons.
+    def test_policy_warning_is_warn(self):
+        check = {**_C_ALLOW, "warnings": ["Consider adding tests"]}
+        result, report, _, _ = _run(_D_AI, _A_CLEAN, _S_NEUTRAL, check)
+        assert result == "warn"
+        assert "1 policy warning" in report["result_reasons"]
+
+    def test_elevated_review_tier_is_warn(self):
+        check = {**_C_ALLOW, "review_tier": "elevated"}
+        result, report, _, _ = _run(_D_AI, _A_CLEAN, _S_NEUTRAL, check)
+        assert result == "warn"
+        assert "policy routed this to elevated review" in report["result_reasons"]
+
+    def test_signals_reach_the_badge_only_through_the_policy(self):
+        """Deterministic signals do not set the badge on their own.
+
+        A low patch coverage the team's policy chose not to warn about stays
+        advisory: it is rendered in the Merge Confidence table, and the badge
+        follows the policy. The default CLI policy does warn on AI + low patch
+        coverage, which arrives here as a policy warning.
+        """
+        check = {**_C_ALLOW, "patch_coverage": 0.1, "mutation_score": 0.1,
+                 "merge_confidence": {"added_source_without_tests": True}}
+        result, report, _, _ = _run(_D_AI, _A_CLEAN, _S_NEUTRAL, check)
+        assert result == "pass"
+        assert report["result_reasons"] == []
+
+    def test_reasons_are_listed_in_the_markdown(self):
+        check = {**_C_ALLOW, "review_tier": "elevated", "warnings": ["Low patch coverage"]}
+        _, _, md, _ = _run(_D_AI, _A_CLEAN, _S_NEUTRAL, check)
+        why = [ln for ln in md.splitlines() if ln.startswith("**Why:**")]
+        assert len(why) == 1
+        assert "1 policy warning" in why[0] and "elevated review" in why[0]
+
+    def test_pass_has_no_why_line(self):
+        _, _, md, _ = _run(_D_AI, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
+        assert "**Why:**" not in md
 
 
 # ── GitHub step outputs ───────────────────────────────────────────────────────
@@ -716,7 +769,9 @@ class TestEvidenceTier:
                   "sources": ["branch-name"]}
         check = {**_C_ALLOW, "evidence_tier": "inferred"}
         result, _, _, _ = _run(detect, _A_CLEAN, _S_NEUTRAL, check)
-        assert result == "warn"  # warn comes from AI-detected, not the tier
+        # The weakest tier still passes on a clean change: the tier grades how
+        # the attribution was obtained, it is not a finding about the code.
+        assert result == "pass"
 
 
 # ── Shallow-checkout notice ────────────────────────────────────────────────────

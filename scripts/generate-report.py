@@ -16,6 +16,12 @@ import os
 import sys
 from datetime import datetime, timezone
 
+# Merge-confidence thresholds. Shared by the WARN decision and the table icons
+# so a row can never render ✅ while the same number pushes the gate to WARN.
+# They mirror the CLI default policy's thresholds.
+PATCH_COVERAGE_THRESHOLD = 0.8
+MUTATION_SCORE_THRESHOLD = 0.5
+
 
 def load_json(path):
     try:
@@ -54,6 +60,54 @@ def coverage_label(cov):
     if cov < 0:
         return "N/A"
     return f"{cov*100:.0f}%"
+
+
+def attention_reasons(
+    detect_error,
+    inconclusive_stages,
+    policy_allowed,
+    denials,
+    warnings_list,
+    review_tier,
+):
+    """Why this run is not a clean pass — the reasons behind the result badge.
+
+    Two kinds of reason, and only two:
+
+    * **The policy said so** — a denial, a warning, or routing to elevated
+      review. What counts as a problem is the team's decision, expressed in
+      their Rego, so the deterministic signals (merge confidence, patch
+      coverage, mutation score, AI-review verdicts) reach this badge only
+      through the policy that consumed them. This generator renders; it does
+      not invent verdicts, and it never overrides a team that deliberately
+      chose not to warn about something.
+    * **The pipeline could not answer** — detection or a stage did not
+      complete, so silence here is missing data, not a clean result.
+
+    AI involvement is deliberately *not* a reason. A clean AI-authored change
+    is a PASS: attribution routes review and grades evidence, it is not itself
+    a finding. Flagging every AI change made the badge carry no information for
+    teams whose changes are mostly AI-authored, and contradicted the scorer,
+    which is built so that a clean fully-AI change scores ~0.
+    """
+    reasons = []
+    if not policy_allowed:
+        n = len(denials)
+        reasons.append(
+            f"policy denied the change ({n} denial{'s' if n != 1 else ''})"
+            if n else "policy denied the change"
+        )
+    if detect_error:
+        reasons.append("AI detection did not complete")
+    if inconclusive_stages:
+        n = len(inconclusive_stages)
+        reasons.append(f"{n} pipeline stage{'s' if n != 1 else ''} did not complete")
+    if warnings_list:
+        n = len(warnings_list)
+        reasons.append(f"{n} policy warning{'s' if n != 1 else ''}")
+    if review_tier == "elevated":
+        reasons.append("policy routed this to elevated review")
+    return reasons
 
 
 def main():
@@ -123,12 +177,22 @@ def main():
     evidence = detect.get("evidence", [])
     sources = detect.get("sources", [])
 
-    # Determine overall result. Policy denial is authoritative (BLOCK); detected
-    # AI or a failed detection routes to WARN; otherwise PASS.
+    # Determine overall result. The badge answers "does this need a human?", not
+    # "was AI involved" \u2014 every reason is listed under the badge so a WARN is
+    # never unexplained.
+    reasons = attention_reasons(
+        detect_error=detect_error,
+        inconclusive_stages=inconclusive_stages,
+        policy_allowed=policy_allowed,
+        denials=denials,
+        warnings_list=warnings_list,
+        review_tier=review_tier,
+    )
     if not policy_allowed:
+        # Policy denial is authoritative.
         overall = "\u274c BLOCK"
         result_value = "block"
-    elif detect_error or ai_detected:
+    elif reasons:
         overall = "\u26a0\ufe0f  WARN"
         result_value = "warn"
     else:
@@ -136,15 +200,11 @@ def main():
         result_value = "pass"
 
     # Pipeline integrity override: a stage that did not complete must never read
-    # as a clean PASS. Advisory by default (at least WARN); fail-closed teams set
-    # failure-mode: block to turn an inconclusive run into a BLOCK.
-    if inconclusive_stages:
-        if failure_mode == "block":
-            overall = "\u274c BLOCK"
-            result_value = "block"
-        elif result_value == "pass":
-            overall = "\u26a0\ufe0f  WARN"
-            result_value = "warn"
+    # as a clean PASS. Advisory by default (already WARN via the reasons above);
+    # fail-closed teams set failure-mode: block to turn it into a BLOCK.
+    if inconclusive_stages and failure_mode == "block":
+        overall = "\u274c BLOCK"
+        result_value = "block"
 
     # Write GitHub step outputs
     if github_output:
@@ -162,6 +222,9 @@ def main():
     report = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "result": result_value,
+        # Why the result is not a clean pass — empty on PASS. Machine-readable
+        # counterpart of the "Why" line in the Markdown report.
+        "result_reasons": reasons,
         "detect_error": detect_error,
         "ai_detected": ai_detected,
         "ai_confidence": ai_confidence,
@@ -206,6 +269,7 @@ def main():
     md = build_markdown(
         overall=overall,
         result_value=result_value,
+        reasons=reasons,
         detect_error=detect_error,
         ai_detected=ai_detected,
         ai_confidence=ai_confidence,
@@ -309,6 +373,11 @@ def build_markdown(**kw):
         tier = kw.get("review_tier", "standard")
         tier_icon = {"auto": "\U0001f7e2", "standard": "\U0001f535", "elevated": "\U0001f7e0"}.get(tier, "")
         lines.append(f"**Review Tier:** {tier_icon} {tier}  ")
+    # Why the badge is not green. A WARN a reader cannot explain is noise, so
+    # every reason that produced it is named here, in one line.
+    reasons = kw.get("reasons") or []
+    if reasons:
+        lines.append(f"**Why:** {md_cell('; '.join(reasons))}  ")
     lines.append("")
 
     # Shallow-checkout notice — diff/history signals may be running on partial
@@ -419,11 +488,11 @@ def build_markdown(**kw):
         ])
         if patch_measured:
             pct = round(patch_coverage * 100)
-            patch_icon = "✅" if patch_coverage >= 0.8 else "⚠️"
+            patch_icon = "✅" if patch_coverage >= PATCH_COVERAGE_THRESHOLD else "⚠️"
             lines.append(f"| Patch coverage (added lines) | {patch_icon} {pct}% |")
         if mutation_measured:
             pct = round(mutation_score * 100)
-            mut_icon = "✅" if mutation_score >= 0.5 else "⚠️"
+            mut_icon = "✅" if mutation_score >= MUTATION_SCORE_THRESHOLD else "⚠️"
             lines.append(f"| Mutation score (added lines) | {mut_icon} {pct}% |")
         if mc:
             lines.append(
