@@ -406,6 +406,91 @@ class TestBuildMarkdown:
         assert r"a\|b" in md
 
 
+# ── Comment size: the tables that grow with the change stay bounded ───────────
+
+def _evidence(source, n, confidence=0.9):
+    return [{"source": source, "value": f"{source} signal {i}", "confidence": confidence} for i in range(n)]
+
+
+def _files(n):
+    return [
+        {"path": f"pkg/f{i}.go", "ai_lines": 100 - i, "total_lines": 120, "confidence": 0.9}
+        for i in range(n)
+    ]
+
+
+class TestReportSize:
+    def test_evidence_collapsed_to_one_row_per_source(self):
+        kw = dict(_MD_BASE, evidence=_evidence("commit-trailer", 8) + _evidence("git-ai-notes", 1, 0.95))
+        md = gr.build_markdown(**kw)
+        detection = md.split("### 📊 Analysis")[0]
+        visible = detection.split("<details>")[0]
+        assert visible.count("| commit-trailer |") == 1
+        assert "_(+7 more)_" in visible
+
+    def test_strongest_signal_represents_its_source(self):
+        ev = [
+            {"source": "pr-body", "value": "weak", "confidence": 0.3},
+            {"source": "pr-body", "value": "strong", "confidence": 0.85},
+        ]
+        md = gr.build_markdown(**dict(_MD_BASE, evidence=ev))
+        visible = md.split("<details>")[0]
+        assert "strong" in visible and "| weak " not in visible
+        assert "85%" in visible
+
+    def test_full_signal_list_kept_behind_details(self):
+        md = gr.build_markdown(**dict(_MD_BASE, evidence=_evidence("commit-trailer", 4)))
+        assert "<details>" in md
+        assert "All 4 detection signals" in md
+        assert md.count("commit-trailer signal 3") == 1
+
+    def test_single_signal_per_source_needs_no_details(self):
+        ev = _evidence("commit-trailer", 1) + _evidence("branch-name", 1)
+        md = gr.build_markdown(**dict(_MD_BASE, evidence=ev))
+        assert "<details>" not in md
+
+    def test_file_rows_capped_with_overflow_note(self):
+        md = gr.build_markdown(**dict(_MD_BASE, files=_files(24)))
+        assert md.count("| pkg/f") == gr.FILE_ROWS_SHOWN
+        assert "_and 14 more_" in md
+
+    def test_files_ranked_by_ai_lines(self):
+        files = [
+            {"path": "small.go", "ai_lines": 1, "total_lines": 10, "confidence": 0.9},
+            {"path": "big.go", "ai_lines": 500, "total_lines": 600, "confidence": 0.9},
+        ]
+        md = gr.build_markdown(**dict(_MD_BASE, files=files))
+        assert md.index("big.go") < md.index("small.go")
+
+    def test_long_file_list_collapsed_with_totals(self):
+        md = gr.build_markdown(**dict(_MD_BASE, files=_files(24)))
+        assert "<summary>24 files," in md
+
+    def test_short_file_list_stays_expanded(self):
+        md = gr.build_markdown(**dict(_MD_BASE, files=_files(3)))
+        assert "<details>" not in md
+        assert "pkg/f2.go" in md
+
+    def test_details_body_is_separated_by_a_blank_line(self):
+        """GitHub renders a table inside <details> only after a blank line."""
+        md = gr.build_markdown(**dict(_MD_BASE, files=_files(24)))
+        body = md.split("<summary>")[1]
+        assert body.split("\n", 1)[1].startswith("\n")
+
+    def test_big_ai_change_stays_readable(self):
+        """The verdict and merge-confidence facts must not be pushed off screen."""
+        kw = dict(
+            _MD_BASE,
+            evidence=_evidence("commit-trailer", 40) + _evidence("git-ai-notes", 1, 0.95),
+            files=_files(60),
+        )
+        md = gr.build_markdown(**kw)
+        visible = "".join(
+            part.split("</details>")[-1] for part in md.split("<details>")
+        )
+        assert len(visible.splitlines()) < 45
+
+
 # ── build_html ────────────────────────────────────────────────────────────────
 
 _HTML_BASE = dict(
