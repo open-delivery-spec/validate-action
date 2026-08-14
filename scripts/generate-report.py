@@ -22,6 +22,13 @@ from datetime import datetime, timezone
 PATCH_COVERAGE_THRESHOLD = 0.8
 MUTATION_SCORE_THRESHOLD = 0.5
 
+# PR-comment budget. The report is read in a PR conversation, so the tables that
+# grow with the size of the change are bounded: a 60-file AI change must not push
+# the verdict and the merge-confidence facts off the screen.
+FILE_ROWS_SHOWN = 10
+FILES_COLLAPSE_AFTER = 5
+EVIDENCE_ROWS_SHOWN = 50
+
 
 def load_json(path):
     try:
@@ -60,6 +67,15 @@ def coverage_label(cov):
     if cov < 0:
         return "N/A"
     return f"{cov*100:.0f}%"
+
+
+def _details(summary, body_lines):
+    """Wrap Markdown in a collapsed <details> block.
+
+    The blank line after </summary> is required: without it GitHub renders the
+    body as literal text instead of Markdown.
+    """
+    return ["", "<details>", f"<summary>{summary}</summary>", ""] + body_lines + ["", "</details>"]
 
 
 def attention_reasons(
@@ -435,9 +451,27 @@ def build_markdown(**kw):
         ])
     ev = kw["evidence"]
     if ev:
-        lines.extend(["", "| Source | Signal | Confidence |", "|--------|--------|-----------|"])
+        # One row per source, not per signal: a four-commit PR produced four
+        # near-identical commit-trailer rows saying the same thing. The strongest
+        # signal represents its source; the full list stays one click away.
+        grouped = {}
         for e in ev:
-            lines.append(f"| {md_cell(e.get('source','?'))} | {md_cell(e.get('value','?'))} | {e.get('confidence',0)*100:.0f}% |")
+            grouped.setdefault(str(e.get("source", "?")), []).append(e)
+        lines.extend(["", "| Source | Signal | Confidence |", "|--------|--------|-----------|"])
+        for source, entries in grouped.items():
+            top = max(entries, key=lambda x: x.get("confidence") or 0)
+            signal = md_cell(top.get("value", "?"))
+            if len(entries) > 1:
+                signal += f" _(+{len(entries) - 1} more)_"
+            lines.append(f"| {md_cell(source)} | {signal} | {(top.get('confidence') or 0)*100:.0f}% |")
+        if len(ev) > len(grouped):
+            detail = ["| Source | Signal | Confidence |", "|--------|--------|-----------|"] + [
+                f"| {md_cell(e.get('source','?'))} | {md_cell(e.get('value','?'))} | {(e.get('confidence') or 0)*100:.0f}% |"
+                for e in ev[:EVIDENCE_ROWS_SHOWN]
+            ]
+            if len(ev) > EVIDENCE_ROWS_SHOWN:
+                detail.append(f"| _and {len(ev) - EVIDENCE_ROWS_SHOWN} more_ |  |  |")
+            lines.extend(_details(f"All {len(ev)} detection signals", detail))
     elif not kw.get("detect_error"):
         lines.append("No AI code detected.")
 
@@ -564,16 +598,27 @@ def build_markdown(**kw):
         for w in kw["warnings_list"]:
             lines.append(f"- \u26a0\ufe0f  {w}")
 
-    # Files
+    # Files — the only table that used to grow without a bound. Ranked by AI
+    # lines so the truncated tail is the least interesting part, and collapsed
+    # once the list is long enough to bury the sections above it.
     files = kw["files"]
     if files:
-        lines.extend(["", "### \U0001f4c1 AI-Detected Files", ""])
-        lines.extend([
+        ranked = sorted(files, key=lambda f: f.get("ai_lines") or 0, reverse=True)
+        shown = ranked[:FILE_ROWS_SHOWN]
+        table = [
             "| File | AI Lines | Total | Confidence |",
             "|------|----------|-------|-----------|",
-        ])
-        for f in files:
-            lines.append(f"| {md_cell(f.get('path','?'))} | {f.get('ai_lines',0)} | {f.get('total_lines',0)} | {f.get('confidence',0)*100:.0f}% |")
+        ]
+        for f in shown:
+            table.append(f"| {md_cell(f.get('path','?'))} | {f.get('ai_lines',0)} | {f.get('total_lines',0)} | {f.get('confidence',0)*100:.0f}% |")
+        if len(ranked) > FILE_ROWS_SHOWN:
+            table.append(f"| _and {len(ranked) - FILE_ROWS_SHOWN} more_ |  |  |  |")
+        lines.extend(["", "### \U0001f4c1 AI-Detected Files"])
+        total_ai = sum((f.get("ai_lines") or 0) for f in ranked)
+        if len(ranked) > FILES_COLLAPSE_AFTER:
+            lines.extend(_details(f"{len(ranked)} files, {total_ai} AI lines", table))
+        else:
+            lines.extend([""] + table)
 
     return "\n".join(lines) + "\n"
 
