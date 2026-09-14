@@ -890,3 +890,100 @@ class TestShallowCheckoutNotice:
         # Degraded inputs get a notice, not a verdict change: a clean run stays pass.
         result, _, _, _ = _run_shallow(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW)
         assert result == "pass"
+
+
+# ── Score rendering: risk band, ratio provenance, duplication scope ───────────
+
+class TestRiskBand:
+    def test_uses_the_cli_field_when_present(self):
+        assert gr.risk_band({"risk": "critical", "technical_debt_delta": 0.1}) == "critical"
+
+    @pytest.mark.parametrize("delta,expected", [
+        (0.0, "low"), (1.0, "low"), (1.01, "moderate"), (3.0, "moderate"),
+        (3.5, "high"), (5.0, "high"), (5.01, "critical"),
+    ])
+    def test_derived_from_the_delta_for_older_clis(self, delta, expected):
+        assert gr.risk_band({"technical_debt_delta": delta, "verdict": "decrease"}) == expected
+
+    def test_garbage_is_low(self):
+        assert gr.risk_band({"technical_debt_delta": "n/a"}) == "low"
+
+
+class TestRecommendationText:
+    @pytest.mark.parametrize("rec,risk,expected", [
+        ("Low risk — acceptable for merge", "low", "Acceptable for merge"),
+        ("Moderate risk — review recommended, ensure adequate tests", "moderate",
+         "Review recommended, ensure adequate tests"),
+        ("Block — critical technical debt increase. Fix it.", "critical",
+         "Critical technical debt increase. Fix it."),
+        ("Acceptable for merge", "low", "Acceptable for merge"),
+        ("", "low", ""),
+    ])
+    def test_strips_the_old_prefix_only(self, rec, risk, expected):
+        assert gr.recommendation_text(rec, risk) == expected
+
+
+class TestAiRatioLabel:
+    def test_unmeasured_ai_change_is_na(self):
+        b = {"ai_code_ratio": 0, "ai_code_ratio_source": "unknown"}
+        assert gr.ai_ratio_label(b, True) == "N/A (not measured)"
+
+    def test_unmeasured_human_change_is_zero(self):
+        b = {"ai_code_ratio": 0, "ai_code_ratio_source": "unknown"}
+        assert gr.ai_ratio_label(b, False) == "0%"
+
+    def test_names_the_provenance(self):
+        b = {"ai_code_ratio": 1.0, "ai_code_ratio_source": "commit-trailer"}
+        assert gr.ai_ratio_label(b, True) == "100% (from attributed commits)"
+
+    def test_older_cli_without_source_shows_the_number(self):
+        assert gr.ai_ratio_label({"ai_code_ratio": 0.49}, True) == "49%"
+
+
+class TestDuplicationLabel:
+    def test_no_code_lines_is_na(self):
+        assert gr.duplication_label({"duplication_rate": 0.25}, 0) == "N/A (no code changed)"
+
+    def test_code_lines_show_the_rate(self):
+        assert gr.duplication_label({"duplication_rate": 0.25}, 40) == "25%"
+
+    def test_unknown_code_lines_show_the_rate(self):
+        assert gr.duplication_label({"duplication_rate": 0.1}, None) == "10%"
+
+
+class TestScoreRendering:
+    def test_headline_and_risk_line_use_the_band_not_the_direction(self):
+        score = {**_S_NEUTRAL, "technical_debt_delta": 0.1, "verdict": "increase",
+                 "risk": "low", "recommendation": "Acceptable for merge"}
+        _, report, md, _ = _run(_D_AI, _A_CLEAN, score, _C_ALLOW)
+        assert "**Tech Debt Delta:** +0.1 (low risk)" in md
+        assert "**Risk:** 🟢 low — Acceptable for merge" in md
+        assert "(increase)" not in md
+        assert report["score"]["risk"] == "low"
+        assert report["score"]["verdict"] == "increase"
+
+    def test_older_cli_verdict_is_never_shown_as_a_risk(self):
+        # Older CLIs report verdict "decrease" for any delta <= 1.0 and carry
+        # the band in the recommendation. The report derives the band itself.
+        score = {**_S_NEUTRAL, "technical_debt_delta": 0.3, "verdict": "decrease",
+                 "recommendation": "Low risk — acceptable for merge"}
+        _, report, md, _ = _run(_D_AI, _A_CLEAN, score, _C_ALLOW)
+        assert "**Tech Debt Delta:** +0.3 (low risk)" in md
+        assert "(decrease)" not in md
+        assert "**Risk:** 🟢 low — Acceptable for merge" in md
+        assert report["score"]["risk"] == "low"
+
+    def test_docs_only_ai_change_claims_no_code_numbers(self):
+        analyze = {**_A_CLEAN, "total_lines": 0, "summary": "No analyzable code in this change"}
+        score = {**_S_NEUTRAL, "breakdown": {**_S_NEUTRAL["breakdown"],
+                 "ai_code_ratio": 0.0, "ai_code_ratio_source": "unknown",
+                 "duplication_rate": 0.0}}
+        _, _, md, _ = _run(_D_AI, analyze, score, _C_ALLOW)
+        assert "| AI Code Ratio | N/A (not measured) |" in md
+        assert "| Duplication Rate | N/A (no code changed) |" in md
+
+    def test_attested_ratio_names_its_source(self):
+        score = {**_S_NEUTRAL, "breakdown": {**_S_NEUTRAL["breakdown"],
+                 "ai_code_ratio": 1.0, "ai_code_ratio_source": "commit-trailer"}}
+        _, _, md, _ = _run(_D_AI, _A_CLEAN, score, _C_ALLOW)
+        assert "| AI Code Ratio | 100% (from attributed commits) |" in md

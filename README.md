@@ -142,7 +142,7 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 >
 > **Result:** ✅ PASS  
 > **AI Detected:** 👤 No (confidence: 0%)  
-> **Tech Debt Delta:** +0.3 (neutral)  
+> **Tech Debt Delta:** +0.3 (low risk)  
 > **Policy:** ✅ Allowed  
 >
 > ### 🔍 Detection
@@ -160,14 +160,20 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 > | Test Coverage | 0% |
 > | Duplication Rate | 0% |
 >
-> **Verdict:** neutral — Moderate risk: review recommended, ensure adequate tests
+> **Risk:** 🟢 low — Acceptable for merge
+
+The AI Code Ratio names its provenance — `(from attributed commits)`,
+`(measured by git-ai)`, `(estimated by heuristics)` — or reads `N/A (not
+measured)` when the CLI has no per-file attribution; it never shows a number
+derived from the detection confidence. Duplication is estimated over added code
+lines only, so a docs-only change reads `N/A (no code changed)`.
 
 ### When AI code is detected:
 
 > **Result:** ✅ PASS  
 > **AI Detected:** 🤖 Yes (confidence: 85%)  
 > **Evidence:** 🟡 attested  
-> **Tech Debt Delta:** +0.4 (decrease)  
+> **Tech Debt Delta:** +0.4 (low risk)  
 > **Policy:** ✅ Allowed  
 > **Review Tier:** 🔵 standard  
 >
