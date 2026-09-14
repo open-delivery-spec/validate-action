@@ -69,6 +69,83 @@ def coverage_label(cov):
     return f"{cov*100:.0f}%"
 
 
+RISK_BANDS = ((1.0, "low"), (3.0, "moderate"), (5.0, "high"))
+RISK_ICONS = {"low": "\U0001f7e2", "moderate": "\U0001f7e1", "high": "\U0001f7e0", "critical": "\U0001f534"}
+
+
+def risk_band(score):
+    """The score's risk band.
+
+    The CLI reports it as `risk`. Older CLIs folded it into `verdict`
+    ("decrease" for anything <= 1.0, which labelled every small positive delta
+    a decrease) and carried the band in the recommendation text. Derive it
+    from the delta with the same bands when the field is absent, so the report
+    never prints a direction as if it were a risk level.
+    """
+    risk = score.get("risk")
+    if risk in RISK_ICONS:
+        return risk
+    try:
+        delta = float(score.get("technical_debt_delta", 0))
+    except (TypeError, ValueError):
+        delta = 0.0
+    for limit, name in RISK_BANDS:
+        if delta <= limit:
+            return name
+    return "critical"
+
+
+def recommendation_text(recommendation, risk):
+    """Strip the risk label older CLIs prefixed to the recommendation
+    ("Low risk — acceptable for merge"): the report names the band itself."""
+    text = str(recommendation or "").strip()
+    lower = text.lower()
+    for prefix in (f"{risk} risk", "block"):
+        if lower.startswith(prefix):
+            rest = text[len(prefix):].lstrip(" :—–-.")
+            if rest:
+                return rest[0].upper() + rest[1:]
+    return text
+
+
+RATIO_SOURCES = {
+    "git-ai": "measured by git-ai",
+    "commit-trailer": "from attributed commits",
+    "diff-heuristics": "estimated by heuristics",
+}
+
+
+def ai_ratio_label(breakdown, ai_detected):
+    """AI Code Ratio cell: the number and where it comes from.
+
+    `unknown` means the CLI had no per-file attribution and claims no ratio:
+    N/A when AI was detected (the share is real but unmeasured), 0% when it
+    was not. Older CLIs report no source; their number is shown as-is.
+    """
+    source = breakdown.get("ai_code_ratio_source")
+    try:
+        pct = f"{float(breakdown.get('ai_code_ratio', 0) or 0) * 100:.0f}%"
+    except (TypeError, ValueError):
+        pct = "N/A"
+    if source is None:
+        return pct
+    if source == "unknown":
+        return "N/A (not measured)" if ai_detected else "0%"
+    label = RATIO_SOURCES.get(source)
+    return f"{pct} ({label})" if label else pct
+
+
+def duplication_label(breakdown, code_lines):
+    """Duplication Rate cell: N/A when the change has no code lines — the
+    estimate is over added code, and a docs-only change has none."""
+    if code_lines is not None and not code_lines:
+        return "N/A (no code changed)"
+    try:
+        return f"{float(breakdown.get('duplication_rate', 0) or 0) * 100:.0f}%"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
 def _details(summary, body_lines):
     """Wrap Markdown in a collapsed <details> block.
 
@@ -170,7 +247,12 @@ def main():
     analyze_summary = analyze.get("summary", "No analysis result")
     tech_debt = score.get("technical_debt_delta", 0)
     verdict = score.get("verdict", "neutral")
-    recommendation = score.get("recommendation", "")
+    # Risk band and recommendation, normalised across CLI versions (see risk_band).
+    risk = risk_band(score)
+    recommendation = recommendation_text(score.get("recommendation", ""), risk)
+    # Code lines the analyzer saw: the duplication estimate is over added code,
+    # so a change with none has no rate to show.
+    code_lines = analyze.get("total_lines")
     policy_allowed = check.get("allowed", True)
     # Absent on policies (or CLIs) without review routing — treat as standard.
     review_tier = check.get("review_tier") or "standard"
@@ -255,6 +337,7 @@ def main():
         "score": {
             "technical_debt_delta": tech_debt,
             "verdict": verdict,
+            "risk": risk,
             "recommendation": recommendation,
             "breakdown": score.get("breakdown", {}),
         },
@@ -286,6 +369,8 @@ def main():
         overall=overall,
         result_value=result_value,
         reasons=reasons,
+        risk=risk,
+        code_lines=code_lines,
         detect_error=detect_error,
         ai_detected=ai_detected,
         ai_confidence=ai_confidence,
@@ -343,6 +428,7 @@ def main():
         ai_confidence=ai_confidence,
         tech_debt=tech_debt,
         verdict=verdict,
+        risk=risk,
         policy_allowed=policy_allowed,
         evidence=evidence,
         analyze_summary=analyze_summary,
@@ -368,6 +454,10 @@ def build_markdown(**kw):
     else:
         ai_label = "\U0001f464 No"
     policy_label = "\u2705 Allowed" if kw["policy_allowed"] else "\u274c Blocked"
+    # The headline names the risk band, never the delta's direction: "+0.1
+    # (decrease)" was a contradiction, and "+0.1 (increase)" reads as a warning
+    # about a delta that is well inside the low band.
+    risk = kw.get("risk") or risk_band({"technical_debt_delta": kw["tech_debt"]})
     lines = [
         "<!-- ods-compliance-report -->",
         "## ODS AI Code Report",
@@ -382,7 +472,7 @@ def build_markdown(**kw):
         ev_icon = {"corroborated": "\U0001f7e2", "attested": "\U0001f7e1", "inferred": "\U0001f7e0"}.get(ev_tier, "")
         lines.append(f"**Evidence:** {ev_icon} {ev_tier}  ")
     lines.extend([
-        f"**Tech Debt Delta:** {kw['tech_debt']:+.1f} ({kw['verdict']})  ",
+        f"**Tech Debt Delta:** {kw['tech_debt']:+.1f} ({risk} risk)  ",
         f"**Policy:** {policy_label}  ",
     ])
     if kw["policy_allowed"]:
@@ -491,13 +581,13 @@ def build_markdown(**kw):
     lines.extend([
         "| Dimension | Value |",
         "|-----------|-------|",
-        f"| AI Code Ratio | {b.get('ai_code_ratio',0)*100:.0f}% |",
+        f"| AI Code Ratio | {ai_ratio_label(b, kw['ai_detected'])} |",
         f"| Defect Density | {b.get('defect_density',0):.1f} / KLOC |",
         f"| Critical Issues | {b.get('critical_issues',0)} |",
         f"| Test Coverage | {coverage_label(b.get('test_coverage',0))} |",
-        f"| Duplication Rate | {b.get('duplication_rate',0)*100:.0f}% |",
+        f"| Duplication Rate | {duplication_label(b, kw.get('code_lines'))} |",
         "",
-        f"**Verdict:** {kw['verdict']} \u2014 {kw['recommendation']}",
+        f"**Risk:** {RISK_ICONS.get(risk, '')} {risk} \u2014 {kw['recommendation']}",
     ])
 
     # Merge Confidence — deterministic diff facts (tested? shaped like real
@@ -682,6 +772,7 @@ def build_html(**kw):
     ) or '<tr><td colspan="4" class="empty">No quality issues detected.</td></tr>'
     b = kw["score"].get("breakdown", {})
     result_value = kw["result_value"]
+    risk = kw.get("risk") or risk_band({"technical_debt_delta": kw["tech_debt"]})
     overall_text = {"pass": "✅ PASS", "warn": "⚠️ WARN", "block": "❌ BLOCK"}.get(
         result_value, h(kw["overall"])
     )
@@ -758,7 +849,7 @@ def build_html(**kw):
     <div class="sub">{kw['ai_confidence']*100:.0f}% confidence</div></div>
   <div class="card"><div class="label">Tech Debt Delta</div>
     <div class="value">{kw['tech_debt']:+.1f}</div>
-    <div class="sub">{h(kw['verdict'])}</div></div>
+    <div class="sub">{h(risk)} risk</div></div>
   <div class="card"><div class="label">Policy</div>
     <div class="value">{'✅ Allowed' if kw['policy_allowed'] else '❌ Blocked'}</div></div>
 </div>
