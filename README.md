@@ -198,6 +198,9 @@ not green is named in a **Why** line:
 > ### 🚫 Policy Denials
 > - ❌ AI code with low test coverage
 
+The comment and the report artifact are produced for every result, `BLOCK`
+included: the job fails, and the PR still carries the report that explains why.
+
 ---
 
 ## Inputs

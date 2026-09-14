@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install test dependencies
-        run: pip install pytest
+        run: pip install pytest pyyaml
       - name: Run generate-report.py unit tests
         run: python -m pytest tests/ -v
 
@@ -118,6 +118,21 @@ jobs:
           test "${{ steps.enforce.outputs.result }}" = "block"
           grep -q '"allowed": false' ods-report/check.json
           echo "SARIF high finding enforced by policy gate ✓"
+
+      - name: Download the blocked run's report artifact
+        # The gate exits 1 on BLOCK. The upload step must still run: a blocked
+        # PR is the one whose report an audit asks for.
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ods-report-enforce
+          path: ${{ runner.temp }}/ods-report-enforce
+
+      - name: Verify the report artifact was uploaded despite BLOCK
+        run: |
+          grep -q '"allowed": false' "${{ runner.temp }}/ods-report-enforce/check.json"
+          test -f "${{ runner.temp }}/ods-report-enforce/ods-summary.md"
+          grep -q "BLOCK" "${{ runner.temp }}/ods-report-enforce/ods-summary.md"
+          echo "Report artifact uploaded on BLOCK ✓"
 
       - name: "Pipeline with built-in Semgrep (semgrep: true)"
         uses: ./
