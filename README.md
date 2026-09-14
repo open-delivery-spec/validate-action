@@ -51,6 +51,12 @@ jobs:
 > and the PR report with the exact fix, instead of quietly reporting on partial
 > inputs.
 
+> Keep the checkout's default ref (the merge commit) or check out
+> `github.event.pull_request.head.sha`. Do **not** use `ref: ${{ github.head_ref }}`:
+> that branch exists only in the contributor's fork, so the checkout itself
+> fails on fork pull requests — see
+> [Permissions and Fork Pull Requests](#permissions-and-fork-pull-requests).
+
 That’s it. The Action automatically:
 
 1. **Attributes** AI-generated code (`Co-Authored-By` trailers, PR disclosure, branch names, diff heuristics)
@@ -197,6 +203,9 @@ not green is named in a **Why** line:
 >
 > ### 🚫 Policy Denials
 > - ❌ AI code with low test coverage
+
+The comment and the report artifact are produced for every result, `BLOCK`
+included: the job fails, and the PR still carries the report that explains why.
 
 ---
 
@@ -548,6 +557,87 @@ Turn off specific display surfaces when you only want validation:
     comment: "false"
     artifact: "false"
 ```
+
+---
+
+## Permissions and Fork Pull Requests
+
+Two surfaces write to the pull request and need `pull-requests: write` on the
+workflow's `GITHUB_TOKEN`: the **PR comment** and **review routing** (labels,
+reviewer requests). Everything else — the gate itself, the check result, the
+job summary, and the report artifact — works with a read-only token.
+
+GitHub gives `pull_request` workflows triggered **from a fork** a read-only
+token, whatever the workflow's `permissions` block says. On those PRs the
+Action still runs the full pipeline and still fails the check on `BLOCK`, but
+it cannot post the comment or apply labels. The log names the fork when that
+happens, and the report is in the job summary and the `ods-report` artifact.
+
+Two things keep fork pull requests working:
+
+1. **Check out the PR head by SHA, or keep the default merge ref.**
+   `ref: ${{ github.head_ref }}` is a branch name that exists only in the
+   fork, so the checkout itself fails on fork PRs:
+
+   ```yaml
+   - uses: actions/checkout@v7
+     with:
+       fetch-depth: 0
+       ref: ${{ github.event.pull_request.head.sha }}   # resolves for forks too
+   ```
+
+2. **To comment on fork PRs, post from a follow-up `workflow_run` job.** It
+   runs in the base repository with a write token, reads the report the gate
+   uploaded (the artifact is uploaded on every result, `BLOCK` included), and
+   never checks out fork code:
+
+   ```yaml
+   # .github/workflows/ods-comment.yml
+   name: ODS PR comment
+   on:
+     workflow_run:
+       workflows: ["ODS AI Code Quality"]   # the workflow that runs validate-action
+       types: [completed]
+
+   permissions:
+     actions: read
+     pull-requests: write
+
+   jobs:
+     comment:
+       if: github.event.workflow_run.event == 'pull_request'
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/download-artifact@v8
+           with:
+             name: ods-report
+             path: ods-report
+             run-id: ${{ github.event.workflow_run.id }}
+             github-token: ${{ github.token }}
+         - name: Post or update the ODS comment
+           env:
+             GH_TOKEN: ${{ github.token }}
+             HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+             RUN_URL: ${{ github.event.workflow_run.html_url }}
+           run: |
+             set -euo pipefail
+             PR=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/pulls" --jq '.[0].number // empty')
+             [ -n "$PR" ] || { echo "No pull request found for ${HEAD_SHA}"; exit 0; }
+             { cat ods-report/ods-summary.md; echo; echo "[View workflow run](${RUN_URL})"; } > body.md
+             ID=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments?per_page=100" \
+                    --jq '[.[] | select(.body | contains("<!-- ods-compliance-report -->"))][0].id // empty')
+             if [ -n "$ID" ]; then
+               gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${ID}" -F body=@body.md >/dev/null
+             else
+               gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -F body=@body.md >/dev/null
+             fi
+   ```
+
+   Set `comment: "false"` on the gate workflow when you use this, so the two
+   never race on same-repository PRs.
+
+`pull_request_target` also gets a write token, but it runs your workflow with
+that token against untrusted fork code. Prefer the `workflow_run` pattern above.
 
 ---
 
