@@ -317,6 +317,12 @@ jobs:
 Like all detection in ODS, this is **attribution from `Co-Authored-By` trailers**
 — what AI tools disclose, not forensic detection.
 
+For every repository in the organization at once, use the
+[`org-ai-report`](https://github.com/open-delivery-spec/.github/blob/main/.github/workflows/org-ai-report.yml)
+reusable workflow: it scans the repositories on a schedule, merges them with
+`ods report merge`, and publishes one dashboard as an artifact, a job summary,
+or GitHub Pages. See [Organization-wide View](https://open-delivery-spec.github.io/spec/org-view.html).
+
 ---
 
 ## Authoritative Analysis: Bring Your Own Scanner (SARIF)
