@@ -9,17 +9,12 @@
 
 ## Why ODS?
 
-AI writes code faster than ever, but AI code increases technical debt in predictable ways:
-
-| AI Failure Mode | Real-world impact |
-|---|---|
-| **Hallucinated APIs** | AI invents functions, packages, endpoints that don’t exist |
-| **Redundant error handling** | 3+ identical `if err != nil` blocks in the same function |
-| **Over-commenting** | 35%+ comment-to-code ratio with self-explanatory comments |
-| **Missing tests** | AI-generated PRs often ship with little or no accompanying tests |
-| **Invisible AI code** | Teams can’t distinguish AI-generated from human-written changes |
-
-This Action runs the full ODS pipeline on every PR so low-quality AI code never reaches production.
+AI-assisted changes arrive faster than review attention grows, and most teams
+cannot say which changes were AI-assisted, whether they were tested, or whether
+they met the team's rules. This Action answers those questions on every pull
+request and enforces the answer as policy. The full argument, the detection
+signals and their confidence, and the design principles are in the
+[spec README](https://github.com/open-delivery-spec/spec#readme).
 
 ---
 
@@ -136,82 +131,32 @@ This is **attribution from signals the tools volunteer**, not forensic detection
 
 ## What You’ll See
 
-### PR Comment (auto-posted)
-
-> ## ODS AI Code Report
->
-> **Result:** ✅ PASS  
-> **AI Detected:** 👤 No (confidence: 0%)  
-> **Tech Debt Delta:** +0.3 (low risk)  
-> **Policy:** ✅ Allowed  
->
-> ### 🔍 Detection
-> No AI code detected.
->
-> ### 📊 Analysis
-> No quality issues detected
->
-> ### 📈 Score
-> | Dimension | Value |
-> |-----------|-------|
-> | AI Code Ratio | 0% |
-> | Defect Density | 0.0 / KLOC |
-> | Critical Issues | 0 |
-> | Test Coverage | 0% |
-> | Duplication Rate | 0% |
->
-> **Risk:** 🟢 low — Acceptable for merge
-
-The AI Code Ratio names its provenance — `(from attributed commits)`,
-`(measured by git-ai)`, `(estimated by heuristics)` — or reads `N/A (not
-measured)` when the CLI has no per-file attribution; it never shows a number
-derived from the detection confidence. Duplication is estimated over added code
-lines only, so a docs-only change reads `N/A (no code changed)`.
-
-### When AI code is detected:
-
-> **Result:** ✅ PASS  
-> **AI Detected:** 🤖 Yes (confidence: 85%)  
-> **Evidence:** 🟡 attested  
-> **Tech Debt Delta:** +0.4 (low risk)  
-> **Policy:** ✅ Allowed  
-> **Review Tier:** 🔵 standard  
->
-> ### 🔍 Detection
-> | Source | Signal | Confidence |
-> |--------|--------|------------|
-> | Co-Authored-By | GitHub Copilot commit trailer | 80% |
-> | pr-body | AI disclosure checkbox is checked | 85% |
->
-> ### 📊 Analysis
-> No quality issues detected
-> ...
-
-AI involvement on its own is **not** a finding — a clean AI-authored change
-passes. The badge answers *"does this need a human?"*, and every reason it is
-not green is named in a **Why** line:
-
-### When something needs attention:
+One comment per pull request, updated in place. The badge answers *"does this
+need a human?"*, and every reason it is not green is named in a **Why** line:
 
 > **Result:** ⚠️  WARN  
-> **AI Detected:** 🤖 Yes (confidence: 85%)  
+> **AI Detected:** 🤖 Yes (confidence: 90%)  
+> **Evidence:** 🟡 attested  
+> **Tech Debt Delta:** +0.4 (low risk)  
 > **Policy:** ✅ Allowed  
 > **Review Tier:** 🟠 elevated  
 > **Why:** 1 policy warning; policy routed this to elevated review  
 >
-> ### ⚠️  Policy Warnings
-> - ⚠️  High-confidence AI code (85%) with low patch coverage (41%)
-
-### When policy blocks the PR:
-
-> **Result:** ❌ BLOCK  
-> **Policy:** ❌ Blocked  
+> ### 🔍 Detection
+> | Source | Signal | Confidence |
+> |--------|--------|------------|
+> | commit-trailer | AI-assisted commit 3f2a9c1 (tool: Claude) | 90% |
 >
-> ### 🚫 Policy Denials
-> - ❌ AI code with low test coverage
+> ### ⚠️  Policy Warnings
+> - ⚠️  AI-authored change: only 41% of added lines are covered by tests
 
-The comment and the report artifact are produced for every result, `BLOCK`
-included: the job fails, and the PR still carries the report that explains why.
+AI involvement on its own is never a finding: a clean, disclosed AI-authored
+change passes. Every number names its provenance (`AI Code Ratio: 60% (from
+attributed commits)`) or reads `N/A (not measured)`; nothing is derived from the
+detection confidence. The comment and the report artifact are produced for
+every result, `BLOCK` included: the job fails, and the PR still carries the
+report that explains why. Every pull request in this repository carries a live
+example.
 
 ---
 
@@ -254,6 +199,7 @@ included: the job fails, and the PR still carries the report that explains why.
 | `tech-debt-delta` | Technical debt delta score |
 | `policy-allowed` | `true` \| `false` |
 | `review-tier` | `auto` \| `standard` \| `elevated` — the policy's review-routing verdict ([details](#review-routing-spend-review-attention-where-it-matters)) |
+| `pipeline-integrity` | `ok` \| `inconclusive` — whether every stage (detect, analyze, score, check) produced a result; `inconclusive` reports as `warn`, or `block` under `failure-mode: block` |
 
 ## Generated Artifacts
 
@@ -396,54 +342,39 @@ deny[msg] {
 
 ## Enterprise Policy
 
-Define custom enforcement rules in `.ods/policy.rego`:
+Put your rules in `.ods/policy.rego` and the Action enforces them; without one,
+the CLI's built-in default applies (deny only critical findings, warn and route
+everything else). A minimal policy:
 
 ```rego
 package ods.policy
 
 default allow := true
 
-# Block critical issues unconditionally
+# Block critical findings unconditionally
 deny[msg] {
     issue := input.issues[_]
     issue.severity == "critical"
     msg = sprintf("CRITICAL: %s at %s:%d", [issue.rule, issue.file, issue.line])
 }
 
-# Block high-confidence AI code with low test coverage
+# Block high-confidence AI code with low test coverage.
+# test_coverage is -1 when no coverage report was found: guard with >= 0.
 deny[msg] {
     input.ai_confidence > 0.8
+    input.test_coverage >= 0
     input.test_coverage < 0.3
     msg = "AI code with low test coverage"
 }
-
-# Block high tech debt delta
-deny[msg] {
-    input.technical_debt_delta > 5.0
-    msg = sprintf("Technical debt increase %.1f exceeds threshold", [input.technical_debt_delta])
-}
-
-# Warn on high-confidence AI with quality issues
-warn[msg] {
-    input.ai_generated == true
-    input.ai_confidence > 0.8
-    count(input.issues) > 2
-    msg = "High-confidence AI code with multiple quality issues"
-}
 ```
 
-Available policy input fields:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `input.ai_generated` | bool | Whether AI code was detected |
-| `input.ai_confidence` | float | Detection confidence (0.0–1.0) |
-| `input.ai_files` | array | Per-file AI detection details |
-| `input.issues` | array | Quality issues found |
-| `input.technical_debt_delta` | float | Technical debt impact score |
-| `input.test_coverage` | float | Test coverage ratio (0.0–1.0) |
-| `input.branch` | string | Branch name |
-| `input.changed_files` | array | Changed file paths in the diff |
+Every field the policy can read, with its sentinels, is in the
+[Policy Input Schema](https://open-delivery-spec.github.io/spec/schemas.html);
+the patterns (warn first, route with `review_tier`, opt-in denies over
+probabilistic signals) are in
+[Writing Policies (Rego)](https://open-delivery-spec.github.io/spec/policy-authoring.html),
+and ready-made templates for open-source and enterprise repositories are in
+[`examples/`](https://github.com/open-delivery-spec/spec/tree/main/examples).
 
 ---
 

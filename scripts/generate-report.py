@@ -313,7 +313,6 @@ def main():
             f.write(f"tech_debt_delta={tech_debt}\n")
             f.write(f"policy_allowed={'true' if policy_allowed else 'false'}\n")
             f.write(f"review_tier={review_tier}\n")
-            f.write(f"detect_error={'true' if detect_error else 'false'}\n")
             f.write(f"pipeline_integrity={'ok' if pipeline_ok else 'inconclusive'}\n")
 
     # Combined JSON report
@@ -367,7 +366,6 @@ def main():
     # Markdown summary
     md = build_markdown(
         overall=overall,
-        result_value=result_value,
         reasons=reasons,
         risk=risk,
         code_lines=code_lines,
@@ -375,7 +373,6 @@ def main():
         ai_detected=ai_detected,
         ai_confidence=ai_confidence,
         tech_debt=tech_debt,
-        verdict=verdict,
         recommendation=recommendation,
         policy_allowed=policy_allowed,
         review_tier=review_tier,
@@ -427,7 +424,6 @@ def main():
         ai_detected=ai_detected,
         ai_confidence=ai_confidence,
         tech_debt=tech_debt,
-        verdict=verdict,
         risk=risk,
         policy_allowed=policy_allowed,
         evidence=evidence,
