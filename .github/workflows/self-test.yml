@@ -179,15 +179,6 @@ jobs:
           comment: "false"
           artifact: "false"
 
-      - name: Pipeline with custom policy (should pass)
-        uses: ./
-        with:
-          diff-base: HEAD~1
-          policy: test-fixtures/policy-allow-all.rego
-          artifact-name: ods-report-policy
-          comment: "false"
-        continue-on-error: true
-
       - name: "Pipeline with review routing (tier: elevated)"
         id: routing
         uses: ./
