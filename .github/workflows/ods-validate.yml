@@ -35,6 +35,10 @@ jobs:
           python3 -m pip install 'commit-check>=2.9.0'
           commit-check --message --branch
 
+      # The policy is the open-source disclosure template from the spec
+      # (examples/ods-policy-oss-disclosure.rego, copied to .ods/policy.rego):
+      # disclose it, test it, own it. Review routing labels the PR with its
+      # tier and asks a maintainer to look at changes the policy marks elevated.
       - name: ODS AI code quality gate
         uses: open-delivery-spec/validate-action@4cfdc6fb1adf69b273c78755cd5dfa0b8d6de7ec # v1
         with:
@@ -42,3 +46,5 @@ jobs:
           branch: ${{ github.head_ref }}
           summary: 'true'
           comment: 'true'
+          review-routing: 'true'
+          elevated-reviewers: 'shenxianpeng'
