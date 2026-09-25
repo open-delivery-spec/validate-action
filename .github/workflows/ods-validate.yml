@@ -40,7 +40,7 @@ jobs:
       # disclose it, test it, own it. Review routing labels the PR with its
       # tier and asks a maintainer to look at changes the policy marks elevated.
       - name: ODS AI code quality gate
-        uses: open-delivery-spec/validate-action@4cfdc6fb1adf69b273c78755cd5dfa0b8d6de7ec # v1
+        uses: open-delivery-spec/validate-action@72bb6d3c0b7ebf6793cf208ffa5d9c7f671af5d4 # v1
         with:
           diff-base: ${{ github.event.pull_request.base.sha || 'origin/main' }}
           branch: ${{ github.head_ref }}
