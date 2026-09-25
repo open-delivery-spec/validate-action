@@ -20,10 +20,11 @@ jobs:
     # The action installs the CLI via `go install ...@main`. Resolve the main
     # tip directly from the source forge instead of the module proxy, whose
     # branch→version cache lags fresh merges — otherwise a self-test exercising
-    # a just-merged CLI change installs the stale pre-change binary.
+    # a just-merged CLI change installs the stale pre-change binary. Only the
+    # ODS module bypasses the proxy: cloning every dependency from its VCS
+    # (golang.org/x/* from go.googlesource.com) can hang for many minutes.
     env:
-      GOPROXY: direct
-      GOSUMDB: "off"
+      GOPRIVATE: github.com/open-delivery-spec
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
