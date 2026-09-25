@@ -1,0 +1,21 @@
+.github/workflows/self-test.yml
+  s_9433bfadf9b69b::t_88b60cd1c9a76b 23-25,27
+action.yml
+  s_9433bfadf9b69b::t_88b60cd1c9a76b 343-345
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f09e40b2558dcce9d33ea2bcc9b248c46bb9b023",
+  "prompts": {},
+  "sessions": {
+    "s_9433bfadf9b69b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cfc4c8c-e4c8-40b0-8e4d-1acb19fe3770",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Xianpeng Shen <xianpeng.shen@gmail.com>"
+    }
+  }
+}
