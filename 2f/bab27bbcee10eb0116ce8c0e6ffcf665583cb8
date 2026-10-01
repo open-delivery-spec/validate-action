@@ -1,0 +1,30 @@
+.github/dependabot.yml
+  s_66212c309e21f0::t_2b1f57e86cf2b4 7-13
+.github/workflows/self-test.yml
+  s_66212c309e21f0::t_8deac77c370163 41
+  s_66212c309e21f0::t_44ec488a44e0d3 25-28
+  s_66212c309e21f0::t_cae29257540c49 8-10,16-17
+.github/workflows/ods-validate.yml
+  s_66212c309e21f0::t_3ce6bbb62f9884 32-33
+.github/workflows/update-cli-ref.yml
+  s_66212c309e21f0::t_14d5eb2f17b1e3 29-34
+.github/workflows/move-major-tag.yml
+  s_66212c309e21f0::t_c1a413d7776280 49
+  s_66212c309e21f0::t_508f59916a4f31 31-36,38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2fbab27bbcee10eb0116ce8c0e6ffcf665583cb8",
+  "prompts": {},
+  "sessions": {
+    "s_66212c309e21f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8763d161-5362-48a1-ae9b-11f7bcd83469",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Xianpeng Shen <xianpeng.shen@gmail.com>"
+    }
+  }
+}
