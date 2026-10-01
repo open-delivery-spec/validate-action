@@ -1,0 +1,46 @@
+tests/test_action_metadata.py
+  s_66212c309e21f0::t_1e51894f808212 41-52
+tests/test_to_verdict.py
+  s_66212c309e21f0::t_b72c5be76a98ed 112-115
+  s_66212c309e21f0::t_42f3a0032691d2 139-195
+  s_66212c309e21f0::t_dcc4cefcef5c9e 3-6,9-10,13
+  s_66212c309e21f0::t_cdee4c23018be6 40-53
+  s_66212c309e21f0::t_eb29b9fd3d1306 54-57
+tests/test_render_attribution.py
+  s_66212c309e21f0::t_affc20c04e3968 69-90
+  s_66212c309e21f0::t_b3a1e03b64e1f1 3-5,8-11,14
+tests/conftest.py
+  s_66212c309e21f0::t_a1d64c5fef1d9f 1-2,8-19,23-44,47-60,68-73,75-77,111-117,119-120,122,124,127-129,131-132,137-144,147-148,150,153
+  s_66212c309e21f0::t_f72df5c55ef275 154
+  s_66212c309e21f0::t_457eb334cd136e 81-88
+  s_66212c309e21f0::t_6844ba99c839be 3-7,20-22,45-46,61-67,74,78-80,89-110,118,121,123,125-126,130,133-136,145-146,149,151-152,155-159
+tests/test_generate_report.py
+  s_66212c309e21f0::t_4d05fe1d469d23 5,12-13,17
+  s_66212c309e21f0::t_1b84b1fbc6e359 957-958
+  s_66212c309e21f0::t_0a2fd5e1f213f6 980-987
+  s_66212c309e21f0::t_216bc2963fae9d 999-1001
+  s_66212c309e21f0::t_fa8174d63ea2e3 455-469
+  s_66212c309e21f0::t_7f2d7f5614c435 1039-1090
+  s_66212c309e21f0::t_90079f39cf420e 663-680
+tests/test_action_steps.py
+  s_66212c309e21f0::t_3d46843f5a2cf2 438-439
+  s_66212c309e21f0::t_5e27fcfd32914e 369,371
+  s_66212c309e21f0::t_7ac711bbc6646b 1-368,370,372-437,440-442,445-487
+  s_66212c309e21f0::t_fcf8e431171e0c 443-444
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8479706a08a2997fb0e4ed42a32e3a5cdf551892",
+  "prompts": {},
+  "sessions": {
+    "s_66212c309e21f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8763d161-5362-48a1-ae9b-11f7bcd83469",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Xianpeng Shen <xianpeng.shen@gmail.com>"
+    }
+  }
+}
