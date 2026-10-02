@@ -1,0 +1,34 @@
+.github/workflows/self-test.yml
+  s_66212c309e21f0::t_b234ae05b07c07 34
+  s_66212c309e21f0::t_c5569c0ccebc30 13-14
+.github/workflows/ods-validate.yml
+  s_66212c309e21f0::t_ecf7897c960899 32-33
+tests/conftest.py
+  s_66212c309e21f0::t_8ebc9c2fb8d673 1-159
+tests/test_action_metadata.py
+  s_66212c309e21f0::t_0f9cf3d2a7f33f 41-52
+tests/test_action_steps.py
+  s_66212c309e21f0::t_e54b0f68117697 1-487
+tests/test_generate_report.py
+  s_66212c309e21f0::t_1ea4c1cc1901f5 5,12-13,17,455-469,663-680,957-958,980-987,999-1001,1039-1090
+tests/test_render_attribution.py
+  s_66212c309e21f0::t_3c15a0512ef578 3-5,8-11,14,69-90
+tests/test_to_verdict.py
+  s_66212c309e21f0::t_ddb2c1f1e37a7b 3-6,9-10,13,40-57,112-115,139-195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c7c66da4eefccbe9a4b429f5e963ccb702757ac7",
+  "prompts": {},
+  "sessions": {
+    "s_66212c309e21f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8763d161-5362-48a1-ae9b-11f7bcd83469",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Xianpeng Shen <xianpeng.shen@gmail.com>"
+    }
+  }
+}
