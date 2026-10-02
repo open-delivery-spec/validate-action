@@ -1,10 +1,17 @@
 """Tests for scripts/render-attribution.py"""
 import importlib.util
+import json
+import runpy
+import sys
 from pathlib import Path
+
+import pytest
+
+_SCRIPT = Path(__file__).parent.parent / "scripts" / "render-attribution.py"
 
 _spec = importlib.util.spec_from_file_location(
     "render_attribution",
-    Path(__file__).parent.parent / "scripts" / "render-attribution.py",
+    _SCRIPT,
 )
 ra = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ra)
@@ -59,3 +66,25 @@ class TestBuildAttributionMd:
         # Minimal dict with only total_commits should still render.
         out = ra.build_attribution_md({"total_commits": 1})
         assert "AI Attribution" in out
+
+
+class TestMain:
+    def test_prints_the_digest_for_a_report_file(self, tmp_path, monkeypatch, capsys):
+        report = tmp_path / "attribution.json"
+        report.write_text(json.dumps(_SAMPLE))
+        monkeypatch.setattr(sys, "argv", ["render-attribution.py", str(report)])
+        ra.main()
+        assert capsys.readouterr().out == ra.build_attribution_md(_SAMPLE) + "\n"
+
+    def test_usage_error_without_a_path(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["render-attribution.py"])
+        with pytest.raises(SystemExit) as exc:
+            ra.main()
+        assert exc.value.code == "usage: render-attribution.py <attribution.json>"
+
+    def test_runs_as_a_script(self, tmp_path, monkeypatch, capsys):
+        report = tmp_path / "attribution.json"
+        report.write_text(json.dumps({"since": "7 days ago", "total_commits": 0}))
+        monkeypatch.setattr(sys, "argv", ["render-attribution.py", str(report)])
+        runpy.run_path(str(_SCRIPT), run_name="__main__")
+        assert "No commits in the selected window." in capsys.readouterr().out

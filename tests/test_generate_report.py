@@ -2,16 +2,19 @@
 import importlib.util
 import json
 import os
+import runpy
 import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
+_SCRIPT = Path(__file__).parent.parent / "scripts" / "generate-report.py"
+
 # Load module whose filename has a hyphen (not a valid Python identifier).
 _spec = importlib.util.spec_from_file_location(
     "generate_report",
-    Path(__file__).parent.parent / "scripts" / "generate-report.py",
+    _SCRIPT,
 )
 gr = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gr)
@@ -449,6 +452,21 @@ class TestReportSize:
         md = gr.build_markdown(**dict(_MD_BASE, evidence=ev))
         assert "<details>" not in md
 
+    def test_signal_list_behind_details_is_capped_too(self):
+        n = gr.EVIDENCE_ROWS_SHOWN + 5
+        md = gr.build_markdown(**dict(_MD_BASE, evidence=_evidence("commit-trailer", n)))
+        details = md.split("<details>")[1]
+        assert f"All {n} detection signals" in details
+        assert details.count("| commit-trailer | commit-trailer signal") == gr.EVIDENCE_ROWS_SHOWN
+        assert "| _and 5 more_ |  |  |" in details
+
+    def test_sensitive_paths_capped_with_overflow_row(self):
+        mc = {"tests_touched": True, "risky_paths": [f"infra/f{i}.tf" for i in range(13)]}
+        md = gr.build_markdown(**dict(_MD_BASE, merge_confidence=mc))
+        assert "| Sensitive paths touched | 13 |" in md
+        assert md.count("| ↳ | `infra/") == 10
+        assert "| ↳ | _and 3 more_ |" in md
+
     def test_file_rows_capped_with_overflow_note(self):
         md = gr.build_markdown(**dict(_MD_BASE, files=_files(24)))
         assert md.count("| pkg/f") == gr.FILE_ROWS_SHOWN
@@ -641,6 +659,24 @@ class TestAIReviewSection:
         result, _, _, _ = _run(_D_HUMAN, _A_CLEAN, _S_NEUTRAL, _C_ALLOW,
                                extra_files={"ai-review-0.json": _VERDICT_RC})
         assert result == "pass"
+
+    def test_verdict_without_findings_has_no_findings_table(self):
+        review = {"reviewer": {"tool": "coderabbit"}, "verdict": "approve"}
+        md = gr.build_markdown(**dict(_MD_BASE, ai_reviews=[review]))
+        assert "| coderabbit | ✅ approve | 0 |" in md
+        assert "| Reviewer | Location |" not in md
+
+    def test_finding_without_a_line_shows_the_file_only(self):
+        review = {**_VERDICT_RC, "findings": [{"file": "svc.go", "message": "m"}]}
+        md = gr.build_markdown(**dict(_MD_BASE, ai_reviews=[review]))
+        assert "| claude-code | svc.go | — | m |" in md
+
+    def test_findings_capped_at_10_with_overflow_row(self):
+        findings = [{"file": f"f{i}.go", "line": i + 1, "message": "m"} for i in range(12)]
+        md = gr.build_markdown(**dict(_MD_BASE, ai_reviews=[{**_VERDICT_RC, "findings": findings}]))
+        assert "| claude-code | f9.go:10 |" in md
+        assert "f10.go" not in md
+        assert "| ... | ... | ... | _and 2 more_ |" in md
 
 
 # ── Merge-confidence section ──────────────────────────────────────────────────
@@ -918,6 +954,8 @@ class TestRecommendationText:
          "Critical technical debt increase. Fix it."),
         ("Acceptable for merge", "low", "Acceptable for merge"),
         ("", "low", ""),
+        # Nothing follows the old label, so there is nothing to strip it down to.
+        ("Low risk", "low", "Low risk"),
     ])
     def test_strips_the_old_prefix_only(self, rec, risk, expected):
         assert gr.recommendation_text(rec, risk) == expected
@@ -939,6 +977,14 @@ class TestAiRatioLabel:
     def test_older_cli_without_source_shows_the_number(self):
         assert gr.ai_ratio_label({"ai_code_ratio": 0.49}, True) == "49%"
 
+    def test_non_numeric_ratio_is_na_and_keeps_its_provenance(self):
+        b = {"ai_code_ratio": "lots", "ai_code_ratio_source": "git-ai"}
+        assert gr.ai_ratio_label(b, True) == "N/A (measured by git-ai)"
+
+    def test_unrecognised_source_shows_the_number_only(self):
+        b = {"ai_code_ratio": 0.5, "ai_code_ratio_source": "telepathy"}
+        assert gr.ai_ratio_label(b, True) == "50%"
+
 
 class TestDuplicationLabel:
     def test_no_code_lines_is_na(self):
@@ -949,6 +995,9 @@ class TestDuplicationLabel:
 
     def test_unknown_code_lines_show_the_rate(self):
         assert gr.duplication_label({"duplication_rate": 0.1}, None) == "10%"
+
+    def test_non_numeric_rate_is_na(self):
+        assert gr.duplication_label({"duplication_rate": "high"}, 40) == "N/A"
 
 
 class TestScoreRendering:
@@ -987,3 +1036,55 @@ class TestScoreRendering:
                  "ai_code_ratio": 1.0, "ai_code_ratio_source": "commit-trailer"}}
         _, _, md, _ = _run(_D_AI, _A_CLEAN, score, _C_ALLOW)
         assert "| AI Code Ratio | 100% (from attributed commits) |" in md
+
+
+# ── Entry point: arguments, job summary, .result ──────────────────────────────
+
+def _write_stages(d, check=_C_ALLOW):
+    for name, data in [("detect", _D_HUMAN), ("analyze", _A_CLEAN),
+                       ("score", _S_NEUTRAL), ("check", check)]:
+        (d / f"{name}.json").write_text(json.dumps(data))
+
+
+class TestEntryPoint:
+    def test_local_mode_renders_without_a_step_output_file(self, tmp_path, monkeypatch):
+        # scripts/run-local.sh passes only the report directory.
+        _write_stages(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["generate-report.py", str(tmp_path)])
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        assert gr.main() == "pass"
+        assert sorted(p.name for p in tmp_path.iterdir()) == [
+            "analyze.json", "check.json", "detect.json", "index.html",
+            "ods-badge.svg", "ods-report.json", "ods-summary.md", "score.json",
+        ]
+
+    def test_report_is_appended_to_the_job_summary(self, tmp_path, monkeypatch):
+        _write_stages(tmp_path)
+        step_summary = tmp_path / "step-summary.md"
+        step_summary.write_text("output of an earlier step\n")
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
+        monkeypatch.delenv("INPUT_SUMMARY", raising=False)  # default: true
+        monkeypatch.setattr(sys, "argv", ["generate-report.py", str(tmp_path), str(tmp_path / "out")])
+        gr.main()
+        text = step_summary.read_text()
+        assert text.startswith("output of an earlier step\n")
+        assert text.endswith((tmp_path / "ods-summary.md").read_text())
+
+    def test_summary_input_false_leaves_the_job_summary_alone(self, tmp_path, monkeypatch):
+        _write_stages(tmp_path)
+        step_summary = tmp_path / "step-summary.md"
+        step_summary.write_text("untouched\n")
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
+        monkeypatch.setenv("INPUT_SUMMARY", "False")
+        monkeypatch.setattr(sys, "argv", ["generate-report.py", str(tmp_path), str(tmp_path / "out")])
+        gr.main()
+        assert step_summary.read_text() == "untouched\n"
+
+    def test_script_writes_the_result_file_the_action_reads(self, tmp_path, monkeypatch):
+        # The action fails the step when <report-dir>/.result says "block".
+        _write_stages(tmp_path, check={**_C_ALLOW, "allowed": False, "denials": ["nope"]})
+        monkeypatch.setattr(sys, "argv", ["generate-report.py", str(tmp_path), str(tmp_path / "out")])
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        runpy.run_path(str(_SCRIPT), run_name="__main__")
+        assert (tmp_path / ".result").read_text() == "block"
+        assert "result=block" in (tmp_path / "out").read_text().splitlines()
