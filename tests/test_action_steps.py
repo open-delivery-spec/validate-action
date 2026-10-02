@@ -424,6 +424,124 @@ class TestAttributionStep:
         assert not (git_repo / "ods-report" / "ods-attribution.md").exists()
 
 
+# ── Comment on Pull Request ───────────────────────────────────────────────────
+
+# Stub `curl`: the GET of the PR's comments writes FAKE_CURL_COMMENTS to the -o
+# file; a PATCH/POST prints FAKE_CURL_STATUS for -w '%{http_code}'. Every call is
+# logged with the method, URL, and the path and content of the uploaded body.
+_FAKE_CURL = '''\
+import json, os, sys
+args = sys.argv[1:]
+call = {"method": "GET", "url": None, "data_path": None}
+opts = {"-X": "method", "-o": "out", "--data-binary": "data_path", "-H": None, "-w": None,
+        "--connect-timeout": None, "--max-time": None}
+i = 0
+while i < len(args):
+    if args[i] in opts:
+        if opts[args[i]]:
+            call[opts[args[i]]] = args[i + 1]
+        i += 2
+    elif args[i].startswith("-"):
+        i += 1
+    else:
+        call["url"] = args[i]
+        i += 1
+if call["data_path"]:
+    call["data_path"] = call["data_path"][1:]
+    with open(call["data_path"]) as f:
+        call["data"] = json.load(f)
+with open(os.environ["FAKE_CURL_LOG"], "a") as log:
+    log.write(json.dumps(call) + "\\n")
+if call["method"] == "GET":
+    with open(os.environ["FAKE_CURL_COMMENTS"]) as src, open(call["out"], "w") as dst:
+        dst.write(src.read())
+    sys.exit(0)
+sys.stdout.write(os.environ.get("FAKE_CURL_STATUS", "201"))
+'''
+
+_MARKER = "<!-- ods-compliance-report -->"
+_API = "https://api.github.com/repos/o/r"
+
+
+def _comment(cid, user_type, body=_MARKER + "\n## ODS AI Code Report"):
+    return {"id": cid, "user": {"login": f"u{cid}", "type": user_type}, "body": body}
+
+
+@pytest.fixture
+def comment(bash, git_repo, stub, clean_env, tmp_path):
+    """Runs the "Comment on Pull Request" step for PR `pr` of o/r; `comments`
+    is the PR's comment list the API returns."""
+    stub("curl", _FAKE_CURL)
+    log = tmp_path / "curl-log.jsonl"
+    report_dir = git_repo / "ods-report"
+    report_dir.mkdir()
+    (report_dir / "ods-summary.md").write_text(f"{_MARKER}\n## ODS AI Code Report\n")
+
+    def run(pr=7, comments=(), head_repo="o/r", status="201", **overrides):
+        event = tmp_path / "event.json"
+        event.write_text(json.dumps({"pull_request": {
+            "number": pr, "head": {"repo": {"full_name": head_repo}},
+            "base": {"repo": {"full_name": "o/r"}}}}))
+        listing = tmp_path / "comments.json"
+        listing.write_text(json.dumps(list(comments)))
+        values = {"GH_TOKEN": "test-token", "OUTPUT_DIR": "ods-report",
+                  "GITHUB_EVENT_PATH": event, "GITHUB_SERVER_URL": "https://github.com",
+                  "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "42",
+                  "GITHUB_API_URL": "https://api.github.com", **overrides}
+        env = clean_env(**step_env("Comment on Pull Request", **values),
+                        FAKE_CURL_LOG=log, FAKE_CURL_COMMENTS=listing, FAKE_CURL_STATUS=status)
+        log.unlink(missing_ok=True)
+        proc = run_step(bash, "Comment on Pull Request", git_repo, env)
+        calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+        return proc, calls
+
+    return run
+
+
+class TestCommentStep:
+    def test_first_run_creates_the_comment(self, comment):
+        proc, calls = comment(comments=[_comment(1, "User", "LGTM")])
+        assert proc.returncode == 0, proc.stderr
+        get, write = calls
+        assert get["url"] == f"{_API}/issues/7/comments?per_page=100"
+        assert (write["method"], write["url"]) == ("POST", f"{_API}/issues/7/comments")
+        assert write["data"]["body"] == (
+            f"{_MARKER}\n## ODS AI Code Report\n\n"
+            "[View workflow run](https://github.com/o/r/actions/runs/42)\n")
+        assert "ODS PR comment POST -> HTTP 201" in proc.stdout
+
+    def test_later_runs_update_the_report_comment(self, comment):
+        proc, calls = comment(comments=[_comment(5, "User", "nice"), _comment(111, "Bot")],
+                              status="200")
+        assert (calls[-1]["method"], calls[-1]["url"]) == ("PATCH", f"{_API}/issues/comments/111")
+        assert "ODS PR comment PATCH -> HTTP 200" in proc.stdout
+
+    def test_comment_posted_with_a_personal_token_is_updated(self, comment):
+        # A custom github-token may belong to a user, so the report comment it
+        # posted earlier is user-authored: it is updated, not duplicated.
+        _, calls = comment(comments=[_comment(333, "User")])
+        assert (calls[-1]["method"], calls[-1]["url"]) == ("PATCH", f"{_API}/issues/comments/333")
+
+    def test_rejected_comment_on_a_fork_pr_names_the_fork(self, comment):
+        proc, _ = comment(head_repo="someone/r", status="403")
+        assert proc.returncode == 0, proc.stderr
+        assert "this pull request comes from a fork (someone/r)" in proc.stdout
+
+    def test_rejected_comment_on_a_same_repo_pr_names_the_permission(self, comment):
+        proc, _ = comment(status="403")
+        assert "The workflow needs 'pull-requests: write' for this step." in proc.stdout
+
+    def test_skipped_without_a_token_or_a_summary(self, comment, git_repo):
+        proc, calls = comment(GH_TOKEN="")
+        assert "Skipping ODS PR comment because github-token is empty." in proc.stdout
+        assert calls == []
+        (git_repo / "ods-report" / "ods-summary.md").unlink()
+        proc, calls = comment()
+        assert proc.returncode == 0, proc.stderr
+        assert "ods-summary.md was not found" in proc.stdout
+        assert calls == []
+
+
 # ── Review routing ────────────────────────────────────────────────────────────
 
 _FAKE_GH = '''\
