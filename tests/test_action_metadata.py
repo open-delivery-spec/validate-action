@@ -38,6 +38,18 @@ class TestStepsAfterBlock:
         assert "github.event_name == 'pull_request'" in _condition("Comment on Pull Request")
 
 
+class TestNoExpressionsInScripts:
+    """Inputs, PR fields and step outputs reach the shell through `env:` only.
+
+    A `${{ }}` expression inside `run:` is pasted into the script before bash
+    parses it, so a PR title, body or branch name could inject commands.
+    """
+
+    def test_run_scripts_contain_no_expressions(self):
+        for name, step in STEPS.items():
+            assert "${{" not in step.get("run", ""), name
+
+
 class TestPipelineStartsClean:
     """The comment step now runs after a failed pipeline, so a summary left by
     an earlier invocation in the same job must be removed before this one
