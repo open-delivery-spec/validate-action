@@ -467,6 +467,60 @@ class TestReportSize:
         assert md.count("| ↳ | `infra/") == 10
         assert "| ↳ | _and 3 more_ |" in md
 
+    def test_unverified_claims_are_named_with_the_diff_evidence(self):
+        mc = {"tests_touched": False, "claims": [
+            {"claim": "fixes-issue", "text": "Fixes #12", "verified": True, "evidence": "1 non-test file changed: a.go"},
+            {"claim": "tests-added", "text": "- [x] Tests added", "verified": False,
+             "evidence": "no test file was added or modified"},
+        ]}
+        md = gr.build_markdown(**dict(_MD_BASE, merge_confidence=mc))
+        assert "| PR description claims | ⚠️ 1 of 2 not shown by the diff |" in md
+        assert "| ↳ | tests-added: no test file was added or modified |" in md
+        assert "fixes-issue" not in md
+
+    def test_verified_claims_are_one_row(self):
+        mc = {"tests_touched": True, "claims": [
+            {"claim": "tests-added", "text": "Added tests", "verified": True, "evidence": "1 test file changed: a_test.go"},
+        ]}
+        md = gr.build_markdown(**dict(_MD_BASE, merge_confidence=mc))
+        assert "| PR description claims | ✅ 1 of 1 shown by the diff |" in md
+        assert "| ↳ |" not in md
+
+    def test_claim_text_cannot_break_the_table(self):
+        mc = {"claims": [{"claim": "docs-updated", "verified": False, "evidence": "a | b\nc"}]}
+        md = gr.build_markdown(**dict(_MD_BASE, merge_confidence=mc))
+        assert "| ↳ | docs-updated: a \\| b c |" in md
+
+    def test_weakened_tests_list_what_went_away(self):
+        mc = {"tests_touched": True, "tests_weakened": True, "test_weakening": {
+            "deleted_test_files": ["tests/test_auth.py"], "skips_added": 2,
+            "assertions_removed": 3, "assertions_added": 1,
+        }}
+        md = gr.build_markdown(**dict(_MD_BASE, merge_confidence=mc))
+        assert "| Tests weakened | ⚠️ yes |" in md
+        assert "| ↳ | deleted `tests/test_auth.py` |" in md
+        assert "| ↳ | 2 test skip marker(s) added |" in md
+        assert "| ↳ | assertions: 3 removed, 1 added |" in md
+
+    def test_unweakened_tests_are_one_row(self):
+        mc = {"tests_touched": True, "tests_weakened": False, "test_weakening": {
+            "skips_added": 0, "assertions_removed": 1, "assertions_added": 4,
+        }}
+        md = gr.build_markdown(**dict(_MD_BASE, merge_confidence=mc))
+        assert "| Tests weakened | ✅ no |" in md
+        assert "assertions:" not in md
+
+    def test_suppressions_shown_only_when_added(self):
+        md = gr.build_markdown(**dict(_MD_BASE, merge_confidence={"suppressions_added": 3}))
+        assert "| Lint / type-check suppressions added | ⚠️ 3 |" in md
+        md = gr.build_markdown(**dict(_MD_BASE, merge_confidence={"suppressions_added": 0}))
+        assert "suppressions" not in md
+
+    def test_older_cli_without_the_new_facts_shows_no_new_rows(self):
+        md = gr.build_markdown(**dict(_MD_BASE, merge_confidence={"tests_touched": True}))
+        for row in ("PR description claims", "Tests weakened", "suppressions added"):
+            assert row not in md
+
     def test_file_rows_capped_with_overflow_note(self):
         md = gr.build_markdown(**dict(_MD_BASE, files=_files(24)))
         assert md.count("| pkg/f") == gr.FILE_ROWS_SHOWN
@@ -980,6 +1034,10 @@ class TestAiRatioLabel:
     def test_non_numeric_ratio_is_na_and_keeps_its_provenance(self):
         b = {"ai_code_ratio": "lots", "ai_code_ratio_source": "git-ai"}
         assert gr.ai_ratio_label(b, True) == "N/A (measured by git-ai)"
+
+    def test_agent_trace_is_measured(self):
+        b = {"ai_code_ratio": 0.6, "ai_code_ratio_source": "agent-trace"}
+        assert gr.ai_ratio_label(b, True) == "60% (measured by Agent Trace)"
 
     def test_unrecognised_source_shows_the_number_only(self):
         b = {"ai_code_ratio": 0.5, "ai_code_ratio_source": "telepathy"}

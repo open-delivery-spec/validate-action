@@ -320,6 +320,10 @@ runs:
             ODS_PR_BODY="$PR_BODY"
           fi
         fi
+        # `ods check` reads the description from the environment to verify
+        # what it claims (tests added, docs updated, fixes an issue) against
+        # the diff, so the body resolved above must reach it too.
+        export ODS_PR_BODY
 
         BRANCH="${ODS_BRANCH:-}"
         if [ -z "$BRANCH" ]; then

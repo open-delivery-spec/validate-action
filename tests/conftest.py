@@ -24,7 +24,7 @@ _FAKE_ODS = '''\
 import json, os, sys
 
 args = sys.argv[1:]
-seen = ("ODS_BRANCH", "ODS_SHALLOW_CHECKOUT", "ODS_PIPELINE_INTEGRITY")
+seen = ("ODS_BRANCH", "ODS_SHALLOW_CHECKOUT", "ODS_PIPELINE_INTEGRITY", "ODS_PR_BODY")
 with open(os.environ["FAKE_ODS_LOG"], "a") as log:
     log.write(json.dumps({"argv": args, "env": {k: os.environ.get(k) for k in seen}}) + "\\n")
 with open(os.environ["FAKE_ODS_CONFIG"]) as f:

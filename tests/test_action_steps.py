@@ -231,6 +231,20 @@ class TestDetectArguments:
         argv = fake_ods.argv("detect")
         assert argv[argv.index("--pr-body") + 1] == "-x from the event"
 
+    @pytest.mark.parametrize("source", ["event", "file"])
+    def test_resolved_pr_body_reaches_check_for_claim_verification(self, pipeline, fake_ods, tmp_path, source):
+        body = "Fixes #12\n- [x] Unit tests added"
+        if source == "event":
+            event = tmp_path / "event.json"
+            event.write_text(json.dumps({"pull_request": {"body": body}}))
+            pipeline(GITHUB_EVENT_PATH=event)
+        else:
+            body_file = tmp_path / "body.md"
+            body_file.write_text(body)
+            pipeline(ODS_PR_BODY_FILE=body_file)
+        [check] = fake_ods.calls("check")
+        assert check["env"]["ODS_PR_BODY"] == body
+
     def test_event_without_a_body_adds_no_pr_body(self, pipeline, fake_ods, tmp_path):
         event = tmp_path / "event.json"
         event.write_text(json.dumps({"pull_request": {"body": None}}))

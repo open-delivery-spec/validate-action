@@ -110,6 +110,7 @@ def recommendation_text(recommendation, risk):
 
 RATIO_SOURCES = {
     "git-ai": "measured by git-ai",
+    "agent-trace": "measured by Agent Trace",
     "commit-trailer": "from attributed commits",
     "diff-heuristics": "estimated by heuristics",
 }
@@ -133,6 +134,44 @@ def ai_ratio_label(breakdown, ai_detected):
         return "N/A (not measured)" if ai_detected else "0%"
     label = RATIO_SOURCES.get(source)
     return f"{pct} ({label})" if label else pct
+
+
+def claim_rows(claims):
+    """Merge Confidence rows for the PR description's checkable claims (tests
+    added, docs updated, fixes an issue) and whether the diff shows them. None
+    when the description claims nothing checkable or the CLI predates claims."""
+    if not claims:
+        return []
+    unverified = [c for c in claims if not c.get("verified")]
+    if not unverified:
+        return [f"| PR description claims | ✅ {len(claims)} of {len(claims)} shown by the diff |"]
+    rows = [f"| PR description claims | ⚠️ {len(unverified)} of {len(claims)} not shown by the diff |"]
+    for c in unverified:
+        rows.append(f"| ↳ | {md_cell(c.get('claim', '?'))}: {md_cell(c.get('evidence', ''))} |")
+    return rows
+
+
+def weakening_rows(mc):
+    """Merge Confidence rows for test weakening: deleted test files, skips
+    added to existing tests, assertions removed. None on CLIs that predate it."""
+    tw = mc.get("test_weakening")
+    if not isinstance(tw, dict):
+        return []
+    if not mc.get("tests_weakened"):
+        return ["| Tests weakened | ✅ no |"]
+    rows = ["| Tests weakened | ⚠️ yes |"]
+    deleted = tw.get("deleted_test_files") or []
+    for p in deleted[:10]:
+        rows.append(f"| ↳ | deleted `{md_cell(p)}` |")
+    if len(deleted) > 10:
+        rows.append(f"| ↳ | _and {len(deleted)-10} more deleted_ |")
+    skips = tw.get("skips_added") or 0
+    if skips:
+        rows.append(f"| ↳ | {skips} test skip marker(s) added |")
+    removed, added = tw.get("assertions_removed") or 0, tw.get("assertions_added") or 0
+    if removed > added:
+        rows.append(f"| ↳ | assertions: {removed} removed, {added} added |")
+    return rows
 
 
 def duplication_label(breakdown, code_lines):
@@ -624,6 +663,11 @@ def build_markdown(**kw):
                 lines.append(f"| ↳ | `{md_cell(p)}` |")
             if len(risky) > 10:
                 lines.append(f"| ↳ | _and {len(risky)-10} more_ |")
+        lines.extend(claim_rows(mc.get("claims")))
+        lines.extend(weakening_rows(mc))
+        suppressions = mc.get("suppressions_added")
+        if isinstance(suppressions, int) and suppressions > 0:
+            lines.append(f"| Lint / type-check suppressions added | ⚠️ {suppressions} |")
         lines.append("")
         lines.append("_Deterministic facts from the diff — no LLM. Advisory by default; AI-authored changes route to extra review._")
 
