@@ -123,6 +123,8 @@ The [Linux kernel coding-assistants convention](https://docs.kernel.org/process/
 
 Repos using [git-ai](https://github.com/git-ai-project/git-ai) get the highest-fidelity signal: the Action fetches its `refs/notes/ai` authorship logs automatically (best effort) and the CLI *measures* per-file AI lines from them instead of estimating — with the agent and model named in the evidence. Repos without git-ai are unaffected.
 
+Repos whose coding agents record [Agent Trace](https://agent-trace.dev) files under `.agent-trace/` get measured attribution too. The records are committed with the code, so the Action has nothing extra to fetch.
+
 ODS also reads supplemental ODS-specific trailer fields (`AI-assisted: true`, `AI-tool: name`) for teams that add them, but `Co-Authored-By` is sufficient on its own.
 
 This is **attribution from signals the tools volunteer**, not forensic detection: an author who strips the trailer can evade it, and the diff heuristics are only a low-confidence fallback. ODS surfaces what AI tools disclose — it does not claim to unmask code that hides it.
@@ -157,6 +159,18 @@ detection confidence. The comment and the report artifact are produced for
 every result, `BLOCK` included: the job fails, and the PR still carries the
 report that explains why. Every pull request in this repository carries a live
 example.
+
+The **Merge Confidence** table lists deterministic facts from the diff. These include:
+- whether tests were touched;
+- patch coverage and mutation score, when measured;
+- sensitive paths.
+
+With a CLI that reports them, it also shows three newer facts:
+- claims in the PR description that the diff does not back up, such as "tests added" when no test file changed;
+- tests the change deletes, skips or strips of assertions;
+- lint or type-check suppressions the change adds.
+
+They route review, and only your policy decides whether they warn. Older CLIs leave these rows out.
 
 ---
 
@@ -586,7 +600,10 @@ that token against untrusted fork code. Prefer the `workflow_run` pattern above.
 
 ## Manual PR Body
 
-If your workflow doesn’t have access to `github.event.pull_request.body`:
+The PR description feeds two things: AI disclosure (a ticked checkbox, an
+`AI Tool:` line, or a sentence such as "generated with Claude Code") and the
+claim check described above. If your workflow doesn’t have access to
+`github.event.pull_request.body`:
 
 ```yaml
 - uses: open-delivery-spec/validate-action@v1
